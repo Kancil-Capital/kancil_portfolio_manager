@@ -1,11 +1,23 @@
+import { supabase } from "@/lib/supabaseClient";
+
 // Base URL is empty — all /api/* calls are proxied to the backend via next.config.ts rewrites.
-// In server components, use NEXT_PUBLIC_API_BASE_URL directly if needed.
 const BASE = "";
 
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const authHeader = await getAuthHeader();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     const text = await res.text();
