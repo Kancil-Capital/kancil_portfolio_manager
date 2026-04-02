@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { BarChart2, Calendar, Newspaper, CircleUser } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 const navItems = [
   { label: "Research", href: "/research", icon: BarChart2 },
@@ -12,6 +14,11 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+  }, []);
 
   return (
     <aside
@@ -82,7 +89,7 @@ export function Sidebar() {
             <CircleUser size={16} style={{ color: "#9ca3af" }} />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-white">analyst@kancil.ac.uk</p>
+            <p className="truncate text-xs font-medium text-white">{email ?? "—"}</p>
             <span
               className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider"
               style={{ background: "#1e3a8a", color: "#93c5fd" }}
