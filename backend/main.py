@@ -1,9 +1,43 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
+from routers import calendar, news, research, tickers
+from workers.scheduler import start_scheduler, stop_scheduler
 
-app = FastAPI(title="Kancil Portfolio Manager API", version="0.1.0")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ────────────────────────────────────────────────────────────────
+    log.info("Starting Kancil Portfolio Manager API")
+    start_scheduler()
+
+    # Optionally warm up FinBERT + spaCy at startup (uncomment for production)
+    # from core.sentiment import get_spacy_nlp, get_sentiment_analyzer
+    # get_spacy_nlp()
+    # get_sentiment_analyzer()
+
+    yield
+
+    # ── Shutdown ───────────────────────────────────────────────────────────────
+    log.info("Shutting down")
+    stop_scheduler()
+
+
+app = FastAPI(
+    title="Kancil Portfolio Manager API",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,7 +47,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Routers ────────────────────────────────────────────────────────────────────
+app.include_router(research.router)
+app.include_router(calendar.router)
+app.include_router(news.router)
+app.include_router(tickers.router)
+
 
 @app.get("/api/health")
-async def health() -> dict:
+def health() -> dict:
     return {"status": "ok", "version": "0.1.0"}

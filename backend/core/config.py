@@ -11,5 +11,8 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Path to trained XGBoost model (relative to backend/ dir)
+    pead_model_path: str = "../models/pead_model.joblib"
+
 
 settings = Settings()

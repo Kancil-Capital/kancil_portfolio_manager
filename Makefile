@@ -16,7 +16,7 @@ dev:
 	@$(MAKE) dev-backend & $(MAKE) dev-frontend
 
 dev-backend:
-	cd $(BACKEND_DIR) && uv run fastapi dev main.py
+	cd $(BACKEND_DIR) && uv run fastapi dev main.py && cd ..
 
 dev-frontend:
-	cd $(FRONTEND_DIR) && bun run dev
+	cd $(FRONTEND_DIR) && bun run dev && cd ..
