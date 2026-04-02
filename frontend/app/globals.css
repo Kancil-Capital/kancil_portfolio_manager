@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg-base: #111827;
+  --color-bg-surface: #1f2937;
+  --color-bg-elevated: #374151;
+
+  --color-brand: #3b82f6;
+  --color-brand-navy: #1e3a8a;
+
+  --color-positive: #10b981;
+  --color-negative: #ef4444;
+  --color-neutral: #f59e0b;
+
+  --font-sans: var(--font-dm-sans), "DM Sans", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+}
+
+body {
+  background-color: #111827;
+  color: #f9fafb;
+  font-family: var(--font-sans);
+}
+
+/* Subtle dot-grid background texture */
+.bg-grid {
+  background-image: radial-gradient(circle, #374151 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Scanline overlay for terminal feel */
+.bg-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* Blinking cursor animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1.1s step-end infinite;
+}
+
+/* Fade-up entrance */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out forwards;
+}
+
+.animate-fade-up-delay-1 { animation: fade-up 0.4s 0.08s ease-out both; }
+.animate-fade-up-delay-2 { animation: fade-up 0.4s 0.16s ease-out both; }
+.animate-fade-up-delay-3 { animation: fade-up 0.4s 0.24s ease-out both; }
+.animate-fade-up-delay-4 { animation: fade-up 0.4s 0.32s ease-out both; }
