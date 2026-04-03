@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Rss, ExternalLink, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Rss, ExternalLink, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 
 import { useGetNews } from "@/lib/generated/news/news";
+import { useGetTrackedSymbols } from "@/lib/generated/tickers/tickers";
 import { SentimentBadge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
@@ -248,20 +249,17 @@ function Pagination({
 
 export default function NewsPage() {
   const [page, setPage] = useState(1);
-  const [tickerInput, setTickerInput] = useState("");
+  const [ticker, setTicker] = useState<string>("");
   const [sentiment, setSentiment] = useState<SentimentFilter>("all");
-  const [sourceInput, setSourceInput] = useState("");
 
-  // Committed filter values (applied on enter/blur for ticker/source)
-  const [tickerFilter, setTickerFilter] = useState<string | undefined>(undefined);
-  const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined);
+  const { data: symbolsRes } = useGetTrackedSymbols();
+  const trackedSymbols = symbolsRes?.status === 200 ? symbolsRes.data : [];
 
   const offset = (page - 1) * PAGE_SIZE;
 
   const { data: res, isLoading } = useGetNews({
-    ticker: tickerFilter || undefined,
+    ticker: ticker || undefined,
     sentiment: sentiment === "all" ? undefined : sentiment,
-    source: sourceFilter || undefined,
     limit: PAGE_SIZE,
     offset,
   });
@@ -269,27 +267,8 @@ export default function NewsPage() {
   const articles = res?.status === 200 ? res.data.articles : [];
   const total = res?.status === 200 ? res.data.total : 0;
 
-  function applyTickerFilter() {
-    const val = tickerInput.trim().toUpperCase() || undefined;
-    setTickerFilter(val);
-    setPage(1);
-  }
-
-  function applySourceFilter() {
-    const val = sourceInput.trim() || undefined;
-    setSourceFilter(val);
-    setPage(1);
-  }
-
-  function clearTicker() {
-    setTickerInput("");
-    setTickerFilter(undefined);
-    setPage(1);
-  }
-
-  function clearSource() {
-    setSourceInput("");
-    setSourceFilter(undefined);
+  function handleTickerChange(val: string) {
+    setTicker(val);
     setPage(1);
   }
 
@@ -298,7 +277,7 @@ export default function NewsPage() {
     setPage(1);
   }
 
-  const hasFilters = !!tickerFilter || sentiment !== "all" || !!sourceFilter;
+  const hasFilters = !!ticker || sentiment !== "all";
 
   return (
     <div className="flex flex-col gap-4 animate-fade-up">
@@ -317,43 +296,20 @@ export default function NewsPage() {
         className="flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3"
         style={{ background: "#1F2937", borderColor: "#374151" }}
       >
-        {/* Ticker filter */}
+        {/* Ticker dropdown */}
         <div className="relative flex items-center">
-          <Search size={12} className="absolute left-2.5" style={{ color: "#6B7280" }} />
-          <input
-            type="text"
-            placeholder="Ticker…"
-            value={tickerInput}
-            onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-            onKeyDown={(e) => { if (e.key === "Enter") applyTickerFilter(); }}
-            onBlur={applyTickerFilter}
-            className="h-8 w-28 rounded border pl-7 pr-6 font-mono text-xs uppercase outline-none transition-colors focus:border-[#3B82F6]"
-            style={{ background: "#111827", borderColor: "#374151", color: "#F9FAFB" }}
-          />
-          {tickerInput && (
-            <button onClick={clearTicker} className="absolute right-2">
-              <X size={10} style={{ color: "#6B7280" }} />
-            </button>
-          )}
-        </div>
-
-        {/* Source filter */}
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            placeholder="Source…"
-            value={sourceInput}
-            onChange={(e) => setSourceInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") applySourceFilter(); }}
-            onBlur={applySourceFilter}
-            className="h-8 w-32 rounded border px-2.5 text-xs outline-none transition-colors focus:border-[#3B82F6]"
-            style={{ background: "#111827", borderColor: "#374151", color: "#F9FAFB" }}
-          />
-          {sourceInput && (
-            <button onClick={clearSource} className="absolute right-2">
-              <X size={10} style={{ color: "#6B7280" }} />
-            </button>
-          )}
+          <select
+            value={ticker}
+            onChange={(e) => handleTickerChange(e.target.value)}
+            className="h-8 appearance-none rounded border pl-2.5 pr-7 font-mono text-xs outline-none transition-colors focus:border-[#3B82F6]"
+            style={{ background: "#111827", borderColor: "#374151", color: ticker ? "#F9FAFB" : "#6B7280" }}
+          >
+            <option value="">All tickers</option>
+            {trackedSymbols.map((sym) => (
+              <option key={sym} value={sym}>{sym}</option>
+            ))}
+          </select>
+          <ChevronDown size={10} className="pointer-events-none absolute right-2" style={{ color: "#6B7280" }} />
         </div>
 
         {/* Divider */}
@@ -388,9 +344,9 @@ export default function NewsPage() {
         {hasFilters && (
           <button
             onClick={() => {
-              clearTicker();
-              clearSource();
+              setTicker("");
               setSentiment("all");
+              setPage(1);
             }}
             className="ml-auto text-xs transition-colors hover:text-[#F9FAFB]"
             style={{ color: "#6B7280" }}

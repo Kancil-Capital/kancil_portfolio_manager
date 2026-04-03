@@ -259,6 +259,36 @@
                 }
             }
         },
+        "/api/tickers/symbols": {
+            "get": {
+                "tags": [
+                    "tickers"
+                ],
+                "summary": "Get Tracked Symbols",
+                "operationId": "getTrackedSymbols",
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "type": "array",
+                                    "title": "Response Gettrackedsymbols"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/tickers": {
             "get": {
                 "tags": [

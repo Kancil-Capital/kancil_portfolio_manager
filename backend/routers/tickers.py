@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 import db.supabase as db
 import services.market_service as market_service
+from core import ticker_cache
 from core.auth import get_current_user
 from db.models import TrackedTicker
 from workers.scheduler import trigger_ondemand_scrape
@@ -32,6 +33,11 @@ class AddTickerRequest(BaseModel):
 
 class UpdateTickerRequest(BaseModel):
     status: Literal["held", "tracking", "untracked"]
+
+
+@router.get("/symbols", response_model=list[str], operation_id="getTrackedSymbols")
+def get_tracked_symbols():
+    return ticker_cache.get_all()
 
 
 @router.get("", response_model=list[TrackedTicker], operation_id="listTickers")
@@ -80,6 +86,9 @@ def add_ticker(body: AddTickerRequest):
         region=info.get("region") or "",
         country=info.get("country") or "",
     )
+
+    # Update in-memory cache
+    ticker_cache.add(ticker)
 
     # Trigger on-demand scrape
     trigger_ondemand_scrape(ticker)

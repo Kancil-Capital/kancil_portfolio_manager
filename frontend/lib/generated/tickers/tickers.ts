@@ -31,6 +31,66 @@ import { fetcher } from '../../fetcher';
 
 
 /**
+ * @summary Get Tracked Symbols
+ */
+export type getTrackedSymbolsResponse200 = {
+  data: string[]
+  status: 200
+}
+
+export type getTrackedSymbolsResponseSuccess = (getTrackedSymbolsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getTrackedSymbolsResponse = (getTrackedSymbolsResponseSuccess)
+
+export const getGetTrackedSymbolsUrl = () => {
+
+
+
+
+  return `/api/tickers/symbols`
+}
+
+export const getTrackedSymbols = async ( options?: RequestInit): Promise<getTrackedSymbolsResponse> => {
+
+  return fetcher<getTrackedSymbolsResponse>(getGetTrackedSymbolsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+export const getGetTrackedSymbolsKey = () => [`/api/tickers/symbols`] as const;
+
+export type GetTrackedSymbolsQueryResult = NonNullable<Awaited<ReturnType<typeof getTrackedSymbols>>>
+
+/**
+ * @summary Get Tracked Symbols
+ */
+export const useGetTrackedSymbols = <TError = unknown>(
+   options?: { swr?:SWRConfiguration<Awaited<ReturnType<typeof getTrackedSymbols>>, TError> & { swrKey?: Key, enabled?: boolean }, request?: SecondParameter<typeof fetcher> }
+) => {
+  const {swr: swrOptions, request: requestOptions} = options ?? {}
+
+  const isEnabled = swrOptions?.enabled !== false
+  const swrKey = swrOptions?.swrKey ?? (() => isEnabled ? getGetTrackedSymbolsKey() : null);
+  const swrFn = () => getTrackedSymbols(requestOptions)
+
+  const query = useSwr<Awaited<ReturnType<typeof swrFn>>, TError>(swrKey, swrFn, swrOptions)
+
+  return {
+    swrKey,
+    ...query
+  }
+}
+/**
  * @summary List Tickers
  */
 export type listTickersResponse200 = {

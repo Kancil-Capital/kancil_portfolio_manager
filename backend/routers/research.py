@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, Depends, HTTPException
 
 import db.supabase as db
+from core import ticker_cache
 from core.auth import get_current_user
 import services.market_service as market_service
 import services.pead_service as pead_service
@@ -46,6 +47,9 @@ def _get_or_create_ticker(ticker: str) -> dict:
 
     # Insert into tracked_tickers with metadata
     db.insert_tracked_ticker(ticker=ticker, name=name, sector=sector, region=region, country=country)
+
+    # Update in-memory cache
+    ticker_cache.add(ticker)
 
     # Trigger background scrape
     trigger_ondemand_scrape(ticker)

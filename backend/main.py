@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import db.supabase as db
 from core.config import settings
+from core import ticker_cache
 from routers import calendar, news, research, tickers
 from workers.scheduler import start_scheduler, stop_scheduler
 
@@ -20,6 +22,8 @@ async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────────────
     log.info("Starting Kancil Portfolio Manager API")
     start_scheduler()
+    rows = db.get_all_tracked_tickers(exclude_untracked=False)
+    ticker_cache.load([r["ticker"] for r in rows])
 
     # Optionally warm up FinBERT + spaCy at startup (uncomment for production)
     # from core.sentiment import get_spacy_nlp, get_sentiment_analyzer
