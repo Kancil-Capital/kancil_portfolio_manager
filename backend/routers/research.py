@@ -44,11 +44,8 @@ def _get_or_create_ticker(ticker: str) -> dict:
     region = info.get("financialCurrency") or info.get("region") or ""
     country = info.get("country") or ""
 
-    # Upsert into tickers table
-    db.upsert_ticker(symbol=ticker, name=name, sector=sector, region=region, country=country)
-
-    # Insert into tracked_tickers
-    db.insert_tracked_ticker(ticker=ticker)
+    # Insert into tracked_tickers with metadata
+    db.insert_tracked_ticker(ticker=ticker, name=name, sector=sector, region=region, country=country)
 
     # Trigger background scrape
     trigger_ondemand_scrape(ticker)
@@ -62,18 +59,14 @@ def _get_or_create_ticker(ticker: str) -> dict:
     }
 
 
-@router.get("/{ticker}", response_model=TickerDeepDive)
+@router.get("/{ticker}", response_model=TickerDeepDive, operation_id="getResearch")
 def get_research(ticker: str):
     ticker = ticker.upper()
 
     tracked = _get_or_create_ticker(ticker)
-    ticker_info = db.get_ticker(ticker)
 
-    name = ""
-    sector = ""
-    if ticker_info:
-        name = ticker_info.get("name") or ticker_info.get("symbol") or ticker
-        sector = ticker_info.get("sector") or ""
+    name = tracked.get("name") or ticker
+    sector = tracked.get("sector") or ""
 
     status = tracked.get("status", "tracking")
     # If just inserted and status is still 'tracking' but was new, reflect it
@@ -146,7 +139,7 @@ def get_research(ticker: str):
     )
 
 
-@router.get("/{ticker}/sentiment-status", response_model=SentimentStatus)
+@router.get("/{ticker}/sentiment-status", response_model=SentimentStatus, operation_id="getSentimentStatus")
 def get_sentiment_status(ticker: str):
     ticker = ticker.upper()
     tracked = db.get_tracked_ticker(ticker)

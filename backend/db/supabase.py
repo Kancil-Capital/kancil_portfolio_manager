@@ -1,9 +1,6 @@
 """
 db/supabase.py
 Supabase client singleton + typed query helpers for all tables.
-
-Note: the existing `tickers` table uses `symbol` as the primary text column
-(not `ticker`) — matching the original SentimentPulse schema.
 """
 
 import logging
@@ -27,32 +24,6 @@ def get_client() -> Client:
     return _client
 
 
-# ── tickers (existing SentimentPulse table) ────────────────────────────────────
-
-def get_ticker(symbol: str) -> dict | None:
-    """Return ticker metadata row or None."""
-    rows = (
-        get_client()
-        .table("tickers")
-        .select("*")
-        .eq("symbol", symbol)
-        .execute()
-        .data
-    )
-    return rows[0] if rows else None
-
-
-def upsert_ticker(symbol: str, name: str, sector: str, region: str, country: str) -> None:
-    get_client().table("tickers").upsert(
-        {"symbol": symbol, "name": name, "sector": sector, "region": region, "country": country},
-        on_conflict="symbol",
-    ).execute()
-
-
-def get_all_tickers() -> list[dict]:
-    return get_client().table("tickers").select("*").execute().data or []
-
-
 # ── tracked_tickers ────────────────────────────────────────────────────────────
 
 def get_tracked_ticker(ticker: str) -> dict | None:
@@ -67,13 +38,24 @@ def get_tracked_ticker(ticker: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def insert_tracked_ticker(ticker: str, added_by: str | None = None) -> None:
+def insert_tracked_ticker(
+    ticker: str,
+    added_by: str | None = None,
+    name: str = "",
+    sector: str = "",
+    region: str = "",
+    country: str = "",
+) -> None:
     get_client().table("tracked_tickers").insert(
         {
             "ticker": ticker,
             "added_by": added_by,
             "status": "tracking",
             "sentiment_ready": False,
+            "name": name,
+            "sector": sector,
+            "region": region,
+            "country": country,
         }
     ).execute()
 
@@ -130,63 +112,39 @@ def get_articles_paginated(
 ) -> tuple[list[dict], int]:
     """
     Return (articles, total_count) with optional filters.
-    Articles include their ticker list from sentiments.
+    Uses the get_articles_paginated RPC to allow ordering by articles.timestamp.
     """
-    client = get_client()
-
-    # Build query against sentiments joined with articles
-    query = (
-        client.table("sentiments")
-        .select("*, articles!inner(id, title, url, source, timestamp)", count="exact")
-    )
-
-    if ticker:
-        query = query.eq("affected", ticker)
-
-    if source:
-        query = query.eq("articles.source", source)
-
-    if sentiment_filter:
-        if sentiment_filter == "positive":
-            query = query.gt("score", 0.1)
-        elif sentiment_filter == "negative":
-            query = query.lt("score", -0.1)
-        else:  # neutral
-            query = query.gte("score", -0.1).lte("score", 0.1)
-
-    result = (
-        query
-        .order("articles.timestamp", desc=True)
-        .range(offset, offset + limit - 1)
+    rows = (
+        get_client()
+        .rpc(
+            "get_articles_paginated",
+            {
+                "p_ticker": ticker,
+                "p_sentiment": sentiment_filter,
+                "p_source": source,
+                "p_limit": limit,
+                "p_offset": offset,
+            },
+        )
         .execute()
-    )
+        .data
+    ) or []
 
-    rows = result.data or []
-    total = result.count or 0
-
-    # Group by article — collect all tickers per article
-    articles_map: dict[str, dict] = {}
-    for row in rows:
-        article = row.get("articles", {})
-        art_id = article.get("id")
-        if not art_id:
-            continue
-        if art_id not in articles_map:
-            articles_map[art_id] = {
-                "id": art_id,
-                "title": article.get("title", ""),
-                "url": article.get("url", ""),
-                "source": article.get("source", ""),
-                "timestamp": article.get("timestamp", ""),
-                "sentiment": row.get("score", 0.0),
-                "confidence": row.get("confidence", 0.0),
-                "tickers": [],
-            }
-        affected = row.get("affected", "")
-        if affected and affected not in articles_map[art_id]["tickers"]:
-            articles_map[art_id]["tickers"].append(affected)
-
-    return list(articles_map.values()), total
+    total = int(rows[0]["total_count"]) if rows else 0
+    articles = [
+        {
+            "id": str(row["id"]),
+            "title": row["title"],
+            "url": row["url"],
+            "source": row["source"],
+            "timestamp": row["timestamp"],
+            "sentiment": row["sentiment"],
+            "confidence": row["confidence"],
+            "tickers": row["tickers"] or [],
+        }
+        for row in rows
+    ]
+    return articles, total
 
 
 def get_articles_for_ticker(ticker: str, limit: int = 20) -> list[dict]:
@@ -196,7 +154,7 @@ def get_articles_for_ticker(ticker: str, limit: int = 20) -> list[dict]:
         .table("sentiments")
         .select("score, confidence, articles!inner(id, title, url, source, timestamp)")
         .eq("affected", ticker)
-        .order("articles.timestamp", desc=True)
+        .order("timestamp", desc=True, foreign_table="articles")
         .limit(limit)
         .execute()
         .data
@@ -206,7 +164,7 @@ def get_articles_for_ticker(ticker: str, limit: int = 20) -> list[dict]:
     for row in rows:
         article = row.get("articles", {})
         results.append({
-            "id": article.get("id", ""),
+            "id": str(article.get("id", "")),
             "title": article.get("title", ""),
             "url": article.get("url", ""),
             "source": article.get("source", ""),
@@ -221,7 +179,7 @@ def get_sentiment_article_count(ticker: str) -> int:
     result = (
         get_client()
         .table("sentiments")
-        .select("id", count="exact")
+        .select("article_id", count="exact")
         .eq("affected", ticker)
         .execute()
     )
@@ -291,6 +249,28 @@ def upsert_eps_cache(records: list[dict]) -> None:
     if not records:
         return
     get_client().table("eps_cache").upsert(records, on_conflict="ticker,fiscal_date").execute()
+
+
+# ── articles (read) ───────────────────────────────────────────────────────────
+
+def get_latest_article_timestamp() -> datetime | None:
+    """Return the timestamp of the most recent article, or None if table is empty."""
+    from datetime import datetime
+    rows = (
+        get_client()
+        .table("articles")
+        .select("timestamp")
+        .order("timestamp", desc=True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        return None
+    raw = rows[0].get("timestamp")
+    if not raw:
+        return None
+    return datetime.fromisoformat(raw.replace("Z", "+00:00"))
 
 
 # ── articles (insert) ──────────────────────────────────────────────────────────

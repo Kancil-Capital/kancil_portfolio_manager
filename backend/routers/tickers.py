@@ -34,7 +34,7 @@ class UpdateTickerRequest(BaseModel):
     status: Literal["held", "tracking", "untracked"]
 
 
-@router.get("", response_model=list[TrackedTicker])
+@router.get("", response_model=list[TrackedTicker], operation_id="listTickers")
 def list_tickers():
     rows = db.get_all_tracked_tickers(exclude_untracked=False)
     return [
@@ -50,7 +50,7 @@ def list_tickers():
     ]
 
 
-@router.post("", response_model=TrackedTicker, status_code=201)
+@router.post("", response_model=TrackedTicker, status_code=201, operation_id="addTicker")
 def add_ticker(body: AddTickerRequest):
     ticker = body.ticker.upper()
 
@@ -71,17 +71,15 @@ def add_ticker(body: AddTickerRequest):
     if not info:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not found on yfinance")
 
-    # Upsert metadata into tickers table
-    db.upsert_ticker(
-        symbol=ticker,
+    # Insert into tracked_tickers with metadata
+    db.insert_tracked_ticker(
+        ticker=ticker,
+        added_by=body.added_by,
         name=info.get("longName") or info.get("shortName") or ticker,
         sector=info.get("sector") or "",
         region=info.get("region") or "",
         country=info.get("country") or "",
     )
-
-    # Insert into tracked_tickers
-    db.insert_tracked_ticker(ticker=ticker, added_by=body.added_by)
 
     # Trigger on-demand scrape
     trigger_ondemand_scrape(ticker)
@@ -97,7 +95,7 @@ def add_ticker(body: AddTickerRequest):
     )
 
 
-@router.patch("/{ticker}", response_model=TrackedTicker)
+@router.patch("/{ticker}", response_model=TrackedTicker, operation_id="updateTickerStatus")
 def update_ticker_status(ticker: str, body: UpdateTickerRequest):
     ticker = ticker.upper()
 

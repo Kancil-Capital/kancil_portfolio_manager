@@ -16,7 +16,7 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=NewsResponse)
+@router.get("", response_model=NewsResponse, operation_id="getNews")
 def get_news(
     ticker: str | None = Query(default=None),
     sentiment: str | None = Query(default=None, pattern="^(positive|neutral|negative)$"),

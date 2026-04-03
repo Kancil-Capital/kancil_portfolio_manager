@@ -1,10 +1,11 @@
-import useSWR from "swr";
-import { api } from "@/lib/api";
+import { useGetResearch } from "@/lib/generated/research/research";
 import type { TickerDeepDive } from "@/lib/types";
 
 export function useTickerData(ticker: string) {
-  return useSWR<TickerDeepDive>(
-    ticker ? `/api/research/${ticker}` : null,
-    () => api.get<TickerDeepDive>(`/api/research/${ticker}`)
-  );
+  const result = useGetResearch(ticker);
+  return {
+    ...result,
+    data: (result.data as { data: TickerDeepDive } | undefined)?.data,
+    mutate: result.mutate,
+  };
 }

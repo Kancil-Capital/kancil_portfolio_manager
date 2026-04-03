@@ -6,7 +6,7 @@ Model is loaded once at startup from models/pead_model.joblib.
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -270,7 +270,7 @@ def get_pead_signal(ticker: str) -> PeadSignal | None:
     cached = db_module.get_latest_pead_signal(ticker)
     if cached:
         computed_at = datetime.fromisoformat(cached["computed_at"].replace("Z", "+00:00"))
-        age = datetime.now().astimezone() - computed_at
+        age = datetime.now(tz=timezone.utc) - computed_at
         if age.total_seconds() < 12 * 3600:
             return _row_to_pead_signal(cached, ticker)
 
@@ -301,7 +301,7 @@ def compute_pead_signal(ticker: str) -> PeadSignal | None:
     macro_df_full = market_service.get_macro_data(start=macro_start)
 
     # Get sector for relative strength
-    ticker_info = db_module.get_ticker(ticker)
+    ticker_info = db_module.get_tracked_ticker(ticker)
     sector = ticker_info.get("sector") if ticker_info else None
 
     feats = compute_features(ticker, price_df, eps_df, macro_df_full, sector=sector)

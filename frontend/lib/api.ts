@@ -1,35 +1,13 @@
-import { supabase } from "@/lib/supabaseClient";
+// Typed API client — generated from OpenAPI spec.
+// Run `bun generate` to regenerate after backend changes.
+//
+// Queries (GET):
+//   import { useGetResearch, useGetSentimentStatus } from "@/lib/generated/research/research"
+//   import { useGetCalendar } from "@/lib/generated/calendar/calendar"
+//   import { useGetNews } from "@/lib/generated/news/news"
+//   import { useListTickers } from "@/lib/generated/tickers/tickers"
+//
+// Mutations (POST/PATCH):
+//   import { useAddTicker, useUpdateTickerStatus } from "@/lib/generated/tickers/tickers"
 
-// Base URL is empty — all /api/* calls are proxied to the backend via next.config.ts rewrites.
-const BASE = "";
-
-async function getAuthHeader(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const authHeader = await getAuthHeader();
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeader,
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-export const api = {
-  get: <T>(path: string, init?: RequestInit) => apiFetch<T>(path, { ...init, method: "GET" }),
-  post: <T>(path: string, body: unknown, init?: RequestInit) =>
-    apiFetch<T>(path, { ...init, method: "POST", body: JSON.stringify(body) }),
-  patch: <T>(path: string, body: unknown, init?: RequestInit) =>
-    apiFetch<T>(path, { ...init, method: "PATCH", body: JSON.stringify(body) }),
-};
+export { fetcher } from "@/lib/fetcher";

@@ -5,7 +5,7 @@ Key change: reads tickers from tracked_tickers table instead of hardcoded list.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import db.supabase as db
 from core.sentiment import get_sentiment
@@ -96,15 +96,16 @@ def run_daily_sentiment_pipeline() -> None:
     for row in tracked:
         ticker = row["ticker"]
         tickers.append(ticker)
-        # Get metadata from tickers table for keywords
-        info = db.get_ticker(ticker)
+        # Get metadata from tracked_tickers for keywords
+        info = db.get_tracked_ticker(ticker)
         if info:
             for key in ("region", "sector", "country"):
                 val = info.get(key)
                 if val:
                     keywords.add(val)
 
-    from_ = datetime.now() - timedelta(days=2)
+    latest = db.get_latest_article_timestamp()
+    from_ = latest if latest else datetime.now(tz=timezone.utc) - timedelta(days=2)
 
     cnbc = CNBCScraper()
     finviz = FinvizScraper()
@@ -125,7 +126,7 @@ def run_daily_sentiment_pipeline() -> None:
     _insert_articles_and_sentiments(all_articles)
 
     # Update last_scraped timestamp
-    now = datetime.now().isoformat()
+    now = datetime.now(tz=timezone.utc).isoformat()
     for row in tracked:
         db.update_tracked_ticker(row["ticker"], last_scraped=now)
 
@@ -148,7 +149,7 @@ def run_ondemand_ticker_scrape(ticker: str, days_back: int = 30) -> None:
     all_articles: list[Article] = []
 
     # Also scrape sector/region keywords
-    info = db.get_ticker(ticker)
+    info = db.get_tracked_ticker(ticker)
     if info:
         for key in ("region", "sector", "country"):
             val = info.get(key)

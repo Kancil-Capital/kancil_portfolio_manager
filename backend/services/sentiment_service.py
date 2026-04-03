@@ -7,7 +7,7 @@ lag correlations, stats, keyword cloud) from the articles/sentiments tables.
 import logging
 import re
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -65,7 +65,7 @@ def _compute_lag_correlations(
         price_returns.index = price_returns.index.normalize()
 
         sent = daily_sentiment.copy()
-        sent.index = pd.to_datetime(sent.index).normalize()
+        sent.index = pd.to_datetime(sent.index).tz_localize(None).normalize()
 
         correlations = []
         for lag in range(1, max_lag + 1):
@@ -92,13 +92,11 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
     Returns None if no sentiment data exists.
     """
     # Get ticker metadata for keyword lookup
-    ticker_info = db.get_ticker(ticker)
+    ticker_info = db.get_tracked_ticker(ticker)
     if not ticker_info:
-        # Try with just the ticker symbol
         keywords = [ticker]
     else:
         keywords = list(filter(None, [
-            ticker_info.get("symbol"),
             ticker_info.get("region"),
             ticker_info.get("sector"),
             ticker_info.get("country"),
@@ -106,7 +104,7 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
         if ticker not in keywords:
             keywords.insert(0, ticker)
 
-    end_date = datetime.now()
+    end_date = datetime.now(tz=timezone.utc)
     start_date = end_date - timedelta(days=days)
 
     rows = db.get_sentiments_rpc(keywords, start_date, end_date)
@@ -125,7 +123,7 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
     else:
         return None
 
-    df["date"] = df["timestamp"].dt.normalize()
+    df["date"] = df["timestamp"].dt.tz_convert(None).dt.normalize()
 
     # Filter to ticker-specific sentiment
     ticker_df = df[df["affected"] == ticker].copy()
@@ -155,7 +153,7 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
 
     # ── Stats ──────────────────────────────────────────────────────────────────
     cutoff_30d = end_date - timedelta(days=30)
-    recent_df = ticker_df[ticker_df["timestamp"] >= cutoff_30d]
+    recent_df = ticker_df[ticker_df["timestamp"] >= cutoff_30d.isoformat()]
     mean_30d = float(recent_df["sentiment"].mean()) if not recent_df.empty else 0.0
 
     all_scores = ticker_df["sentiment"].values
@@ -195,11 +193,10 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
 
 def get_latest_sentiment_score(ticker: str, days: int = 7) -> float | None:
     """Return the mean sentiment score for the last N days. Used in calendar."""
-    ticker_info = db.get_ticker(ticker)
+    ticker_info = db.get_tracked_ticker(ticker)
     keywords = [ticker]
     if ticker_info:
         keywords = list(filter(None, [
-            ticker_info.get("symbol"),
             ticker_info.get("region"),
             ticker_info.get("sector"),
             ticker_info.get("country"),
@@ -207,7 +204,7 @@ def get_latest_sentiment_score(ticker: str, days: int = 7) -> float | None:
         if ticker not in keywords:
             keywords.insert(0, ticker)
 
-    end_date = datetime.now()
+    end_date = datetime.now(tz=timezone.utc)
     start_date = end_date - timedelta(days=days)
     rows = db.get_sentiments_rpc(keywords, start_date, end_date)
     if not rows:

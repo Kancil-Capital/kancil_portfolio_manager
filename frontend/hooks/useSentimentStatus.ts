@@ -1,11 +1,15 @@
-import useSWR from "swr";
-import { api } from "@/lib/api";
+import { useGetSentimentStatus } from "@/lib/generated/research/research";
 import type { SentimentStatus } from "@/lib/types";
 
 export function useSentimentStatus(ticker: string, enabled: boolean) {
-  return useSWR<SentimentStatus>(
-    enabled ? `/api/research/${ticker}/sentiment-status` : null,
-    () => api.get<SentimentStatus>(`/api/research/${ticker}/sentiment-status`),
-    { refreshInterval: 5000 }
-  );
+  const result = useGetSentimentStatus(ticker, {
+    swr: {
+      enabled,
+      refreshInterval: 5000,
+    },
+  });
+  return {
+    ...result,
+    data: (result.data as { data: SentimentStatus } | undefined)?.data,
+  };
 }

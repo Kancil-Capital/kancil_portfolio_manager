@@ -21,7 +21,7 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=CalendarResponse)
+@router.get("", response_model=CalendarResponse, operation_id="getCalendar")
 def get_calendar(days_ahead: int = Query(default=30, ge=1, le=365)):
     # Get all tracked tickers
     tracked = db.get_all_tracked_tickers(exclude_untracked=True)
@@ -44,9 +44,9 @@ def get_calendar(days_ahead: int = Query(default=30, ge=1, le=365)):
     events: list[CalendarEvent] = []
     for ev in earnings_events:
         ticker = ev["ticker"]
-        ticker_info = db.get_ticker(ticker)
-        name = ticker_info.get("name") or ticker if ticker_info else ticker
-        sector = ticker_info.get("sector") or "" if ticker_info else ""
+        tracked_row = tracked_map.get(ticker, {})
+        name = tracked_row.get("name") or ticker
+        sector = tracked_row.get("sector") or ""
         status = tracked_map.get(ticker, {}).get("status", "tracking")
 
         # Sentiment score (7-day mean)
