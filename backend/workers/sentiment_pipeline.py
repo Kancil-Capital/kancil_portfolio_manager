@@ -61,12 +61,18 @@ def _run_finbert_consumer(
     event_queue: "queue.Queue | None" = None,
 ) -> int:
     """
-    Pull Articles from article_queue, upsert to DB, run FinBERT, persist sentiments.
-    Returns the count of newly-processed (non-duplicate) articles.
-    If event_queue is provided, emits ScrapeEvents for each article and a final 'done'.
+    Pull Articles from article_queue, run FinBERT immediately on each, accumulate
+    results in memory, then batch-upsert articles and insert sentiments only for
+    rows that were actually new (not duplicates).
+
+    Returns the count of articles FinBERT found entities in (including duplicates —
+    the stream events reflect real inference work done).
+    Emits ScrapeEvents to event_queue if provided; final 'done' after DB writes.
     """
     from workers.scrape_stream import ScrapeEvent
 
+    # (article_json, finbert_results) for every article FinBERT found entities in
+    processed: list[tuple[dict, list]] = []
     articles_done = 0
 
     while True:
@@ -79,35 +85,42 @@ def _run_finbert_consumer(
         if item is None:  # sentinel
             break
 
-        # Upsert single article — returns [] if URL already in DB (duplicate)
-        inserted = db.upsert_articles([item.to_json()])
-        if not inserted:
-            continue
-
-        row = inserted[0]
         results = get_sentiment(
-            title=row["title"],
-            body=row["body"],
-            source=row["source"],
-            author=row.get("author"),
+            title=item.title,
+            body=item.body,
+            source=item.source,
+            author=item.author,
         )
 
         if not results:
-            db.delete_articles([row["id"]])
-        else:
-            db.insert_sentiments([
-                {"article_id": row["id"], "affected": e, "score": s, "confidence": c}
-                for e, s, c in results
-            ])
-            articles_done += 1
+            continue  # no entities — skip entirely, don't bother persisting
 
-            if event_queue is not None:
-                event_queue.put(ScrapeEvent(
-                    stage="analyzing",
-                    article_title=row["title"],
-                    sentiment=results[0][1],   # score of the highest-confidence entity
-                    articles_done=articles_done,
-                ))
+        processed.append((item.to_json(), results))
+        articles_done += 1
+
+        if event_queue is not None:
+            event_queue.put(ScrapeEvent(
+                stage="analyzing",
+                article_title=item.title,
+                sentiment=results[0][1],  # score of highest-confidence entity
+                articles_done=articles_done,
+            ))
+
+    # ── Batch persist ──────────────────────────────────────────────────────────
+    # upsert_articles returns only newly inserted rows (duplicates silently ignored).
+    # Build a URL→results map so we can match insertions back to FinBERT output.
+    if processed:
+        url_to_results: dict[str, list] = {p[0]["url"]: p[1] for p in processed}
+        inserted = db.upsert_articles([p[0] for p in processed])
+        log.info(f"Upserted {len(processed)} articles — {len(inserted)} new, {len(processed) - len(inserted)} dupes skipped")
+
+        sentiments = [
+            {"article_id": row["id"], "affected": e, "score": s, "confidence": c}
+            for row in inserted
+            for e, s, c in url_to_results.get(row["url"], [])
+        ]
+        if sentiments:
+            db.insert_sentiments(sentiments)
 
     if event_queue is not None:
         event_queue.put(ScrapeEvent(stage="done", articles_done=articles_done))
