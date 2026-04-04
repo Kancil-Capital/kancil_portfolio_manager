@@ -5,6 +5,7 @@ import { AlertCircle, BarChart2 } from "lucide-react";
 
 import { useTickerData } from "@/hooks/useTickerData";
 import { useSentimentStatus } from "@/hooks/useSentimentStatus";
+import { useScrapeStream } from "@/hooks/useScrapeStream";
 
 import { TickerHeader } from "@/components/research/TickerHeader";
 import { FetchingBanner } from "@/components/research/FetchingBanner";
@@ -96,10 +97,18 @@ function TechnicalPill({ label, value, color }: { label: string; value: string; 
 function ResearchContent({ ticker }: { ticker: string }) {
   const { data, error, isLoading, mutate } = useTickerData(ticker);
 
-  const shouldPoll = !!data && !data.sentiment_ready;
+  // WebSocket live stream — active whenever sentiment isn't ready yet
+  const { events: streamEvents, isStreaming } = useScrapeStream(
+    ticker,
+    !!data && !data.sentiment_ready,
+    () => mutate(),
+  );
+
+  // Polling fallback — only runs when WS is not streaming
+  const shouldPoll = !!data && !data.sentiment_ready && !isStreaming;
   const { data: statusData } = useSentimentStatus(ticker, shouldPoll);
 
-  // When sentiment becomes ready, refresh main ticker data
+  // Polling catches the case where WS finished before we connected
   useEffect(() => {
     if (statusData?.ready && data && !data.sentiment_ready) {
       mutate();
@@ -123,7 +132,12 @@ function ResearchContent({ ticker }: { ticker: string }) {
 
       {/* ── Fetching banner (new ticker) ───────────────────────────────────── */}
       {!data.sentiment_ready && (
-        <FetchingBanner ticker={ticker} status={statusData} />
+        <FetchingBanner
+          ticker={ticker}
+          status={statusData}
+          streamEvents={streamEvents}
+          isStreaming={isStreaming}
+        />
       )}
 
       {/* ── Main grid ─────────────────────────────────────────────────────── */}
