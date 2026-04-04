@@ -105,6 +105,50 @@ Sentiment-tagged news stream across the entire covered universe:
 
 ---
 
+### 4.4 Pipeline Refactor + WebSocket Streaming
+
+#### Sentiment Pipeline — Producer-Consumer Refactor
+
+**Problem:** The current pipeline is fully sequential: all scrapers finish → all articles upserted → FinBERT runs one-by-one. FinBERT is the bottleneck and doesn't start until scraping is completely done. On runs with 100+ articles this causes significant delay.
+
+**Proposed approach:** Classic producer-consumer pattern using a queue.
+- Scrapers (producers) feed articles into a shared queue as they arrive
+- A FinBERT worker (consumer) pulls from the queue and starts inference immediately, overlapping with ongoing scraping
+- Both sides are thread-safe: scrapers are I/O-bound (threads fine), PyTorch releases the GIL during inference (real parallelism)
+
+**Design consideration:** Deduplication currently happens via a DB upsert before FinBERT runs, to avoid wasting inference on already-seen articles. In a streaming pipeline this check needs to happen per-article (more DB round trips) or duplicates get processed and discarded after the fact.
+
+#### On-Demand Fetch — New Ticker Flow
+
+**Entry point:** Tickers are not added via a dedicated `POST /api/tickers` — that endpoint was removed. The only entry point is `GET /api/research/{ticker}`, which calls `_get_or_create_ticker` inline. If the ticker is new, it inserts it and triggers the background scrape from there.
+
+**Problem:** PEAD and EPS have no dependency on sentiment, but the original code gated them both behind `sentiment_ready`. This meant a newly tracked ticker had no PEAD or EPS data until the nightly run at 2am UTC, even though computing them takes seconds.
+
+**Correct flow:**
+1. User navigates to `/research/{ticker}`
+2. `_get_or_create_ticker` inserts the ticker and fires the background sentiment scrape
+3. PEAD + EPS are computed immediately (best-effort, non-blocking on failure) — fast since it's just math + one Alpha Vantage call + XGBoost inference
+4. Research page returns with price + PEAD populated right away; sentiment fields are null with `sentiment_ready: false`
+5. Frontend subscribes to the WebSocket scrape stream — shows a live feed of articles being analyzed instead of a spinner
+6. When the stream closes, the sentiment panel populates
+
+**WebSocket stream endpoint:** `WS /api/research/{ticker}/scrape-stream`
+- Pushes events: `{ stage, article_title, sentiment, articles_done, articles_total }`
+- Pairs naturally with the producer-consumer pipeline refactor — the WebSocket is a third consumer of the queue
+
+#### Ticker Management — Remaining TODOs
+
+1. **`added_by` from auth:** When `_get_or_create_ticker` fires on a new ticker, extract the user's email from the JWT (already available via `get_current_user`) and pass it into `insert_tracked_ticker` as `added_by`. Currently always null.
+
+2. **Recently Tracked section:** The homepage (`/research`) shows 4 hardcoded skeleton cards. Wire it up to `GET /api/tickers` and display the most recently added tickers with their status and sentiment_ready state.
+
+3. **Ticker management page:** Analysts should be able to untrack tickers they added. Needs a `/tickers` management page that:
+   - Lists all tracked tickers with metadata
+   - Allows the current user to remove/untrack only tickers where `added_by` matches their email (enforced on both frontend and backend via auth + `added_by` check in the PATCH handler)
+   - Admins (CIO) can untrack any ticker
+
+---
+
 ## 5. Technical Architecture
 
 ### Stack
@@ -311,3 +355,4 @@ Analysts simply search any ticker — the system handles whether it's already tr
 - Not an ICOM voting/pitch tool (stays offline)
 - Not a financial data terminal (no Bloomberg/FactSet replacement)
 - Not a backtesting engine (PEAD models run offline; results are cached)
+

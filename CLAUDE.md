@@ -155,7 +155,8 @@ Three Python research tools are being ported — their logic is adapted, but the
 1. Backend services — all routers, services, background workers
 2. Research Terminal — ticker deep-dive page (`/research/[ticker]`)
 3. Calendar + News — `/calendar` and `/news` pages
-4. Polish + Deploy — Vercel (frontend), Railway/Render (backend + workers)
+4. Pipeline + Streaming — producer-consumer sentiment pipeline, WebSocket scrape-stream for new ticker UX
+5. Polish + Deploy — Vercel (frontend), Railway/Render (backend + workers)
 
 ## Spec Documents
 

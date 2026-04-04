@@ -333,7 +333,7 @@ def compute_pead_signal(ticker: str) -> PeadSignal | None:
     # ── Persist to pead_signals ────────────────────────────────────────────────
     signal_row = {
         "ticker": ticker,
-        "computed_at": datetime.now().isoformat(),
+        "computed_at": datetime.now(tz=timezone.utc).isoformat(),
         "earnings_date": str(earnings_date),
         "days_to_earnings": days_to_earnings,
         "ret_5d_pre": feats.get("ret_5d_pre"),

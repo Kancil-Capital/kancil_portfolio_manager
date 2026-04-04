@@ -4,6 +4,10 @@ Daily sentiment pipeline — adapted from sentiment-analysis/app/data/pipeline.p
 Key change: reads tickers from tracked_tickers table instead of hardcoded list.
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -140,7 +144,7 @@ def run_ondemand_ticker_scrape(ticker: str, days_back: int = 30) -> None:
     """
     log.info(f"On-demand scrape started for {ticker}")
 
-    from_ = datetime.now() - timedelta(days=days_back)
+    from_ = datetime.now(tz=timezone.utc) - timedelta(days=days_back)
 
     cnbc = CNBCScraper()
     finviz = FinvizScraper()
@@ -166,6 +170,20 @@ def run_ondemand_ticker_scrape(ticker: str, days_back: int = 30) -> None:
     db.update_tracked_ticker(
         ticker,
         sentiment_ready=True,
-        last_scraped=datetime.now().isoformat(),
+        last_scraped=datetime.now(tz=timezone.utc).isoformat(),
     )
     log.info(f"On-demand scrape complete for {ticker} — {len(all_articles)} articles")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    if len(sys.argv) > 1:
+        ticker = sys.argv[1].upper()
+        days_back = int(sys.argv[2]) if len(sys.argv) > 2 else 30
+        run_ondemand_ticker_scrape(ticker, days_back=days_back)
+    else:
+        run_daily_sentiment_pipeline()

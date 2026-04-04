@@ -30,6 +30,7 @@ class FinvizScraper(Scraper):
 
     def scrape(self, keyword: str, from_: datetime, **kwargs) -> list[Article]:
         self.keyword = keyword
+        self.log(f"Scraping ticker '{keyword}' from {from_.strftime('%Y-%m-%d %H:%M UTC')}")
 
         try:
             resp = requests.get(

@@ -7,7 +7,7 @@ Adapted from sentiment-analysis/app/data/scrapers/cnbc_scraper.py.
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -68,7 +68,7 @@ class CNBCScraper(Scraper):
         return None
 
     def _get_ticker_articles(self, ticker: str, from_: datetime) -> list[tuple]:
-        time_period = (datetime.now() - from_).days
+        time_period = (datetime.now(tz=timezone.utc) - from_).days
         graphql_url = "https://webql-redesign.cnbcfm.com/graphql"
         variables = {
             "pageSize": 30,
@@ -175,6 +175,7 @@ class CNBCScraper(Scraper):
     def scrape(self, keyword: str, from_: datetime, **kwargs) -> list[Article]:
         self.keyword = keyword
         is_ticker = kwargs.get("is_ticker", False)
+        self.log(f"Scraping {'ticker' if is_ticker else 'keyword'} '{keyword}' from {from_.strftime('%Y-%m-%d %H:%M UTC')}")
         raw = self._get_ticker_articles(keyword, from_) if is_ticker else self._get_keyword_articles(keyword, from_)
         self.log(f"Found {len(raw)} articles, fetching bodies...")
 

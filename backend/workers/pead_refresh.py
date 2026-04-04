@@ -4,6 +4,10 @@ Nightly PEAD signal refresh — runs at 02:00 UTC.
 Recomputes signals for all tracked tickers with upcoming earnings.
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import logging
 
 import db.supabase as db
@@ -48,3 +52,12 @@ def refresh_pead_signals() -> None:
     log.info(
         f"=== PEAD refresh complete — {success} updated, {skipped} skipped, {failed} failed ==="
     )
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    refresh_pead_signals()

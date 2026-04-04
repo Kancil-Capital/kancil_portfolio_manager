@@ -8,7 +8,7 @@ Uses Selenium for cookie initialisation (headless Chrome required).
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -90,6 +90,7 @@ class YFinanceScraper(Scraper):
 
     def scrape(self, keyword: str, from_: datetime, **kwargs) -> list[Article]:
         self.keyword = keyword
+        self.log(f"Scraping ticker '{keyword}' from {from_.strftime('%Y-%m-%d %H:%M UTC')}")
 
         url = f"https://uk.finance.yahoo.com/quote/{keyword}/news/"
         try:
@@ -128,7 +129,7 @@ class YFinanceScraper(Scraper):
                 for article in stream_sorted:
                     if "yahoo" not in article["content"]["canonicalUrl"]["url"][:30]:
                         continue
-                    if article["content"]["pubDate"] < from_.isoformat():
+                    if article["content"]["pubDate"] < from_.astimezone(timezone.utc).isoformat():
                         finished = True
                         break
                     scraped_urls.append(article["content"]["canonicalUrl"]["url"])
