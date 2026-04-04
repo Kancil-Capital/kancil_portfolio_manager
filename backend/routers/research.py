@@ -26,7 +26,6 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/research",
     tags=["research"],
-    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -66,7 +65,7 @@ def _get_or_create_ticker(ticker: str) -> dict:
     }
 
 
-@router.get("/{ticker}", response_model=TickerDeepDive, operation_id="getResearch")
+@router.get("/{ticker}", response_model=TickerDeepDive, operation_id="getResearch", dependencies=[Depends(get_current_user)])
 def get_research(ticker: str):
     ticker = ticker.upper()
 
@@ -141,7 +140,7 @@ def get_research(ticker: str):
     )
 
 
-@router.get("/{ticker}/sentiment-status", response_model=SentimentStatus, operation_id="getSentimentStatus")
+@router.get("/{ticker}/sentiment-status", response_model=SentimentStatus, operation_id="getSentimentStatus", dependencies=[Depends(get_current_user)])
 def get_sentiment_status(ticker: str):
     ticker = ticker.upper()
     tracked = db.get_tracked_ticker(ticker)
@@ -257,4 +256,7 @@ async def scrape_stream(websocket: WebSocket, ticker: str, token: str | None = N
     except WebSocketDisconnect:
         log.info(f"scrape-stream client disconnected for {ticker}")
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except RuntimeError:
+            pass

@@ -7,14 +7,17 @@ Adapted from sentiment-analysis/app/model/main.py — same logic, clean async-co
 import re
 import warnings
 from dataclasses import dataclass
+from pathlib import Path
+import logging
 
 warnings.filterwarnings("ignore")
 
+log = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 class ModelConfig:
-    SENTIMENT_MODEL: str = "ProsusAI/finbert"
+    SENTIMENT_MODEL: str = str(Path(__file__).resolve().parent.parent.parent / "models" / "finbert")
     MAX_SEQUENCE_LENGTH: int = 512
     MIN_CONFIDENCE: float = 0.25
     SPACY_MODEL: str = "en_core_web_lg"
@@ -343,7 +346,11 @@ class SentimentAnalyzer:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available()
+            else "mps" if torch.backends.mps.is_available()
+            else "cpu"
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         self.model.to(self.device)

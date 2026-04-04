@@ -43,6 +43,7 @@ def _run_scraper_pool(
     def _scrape(scraper, keyword, is_ticker):
         try:
             articles = scraper.scrape(keyword, from_, is_ticker=is_ticker)
+            log.info(f"Scraper {scraper.name} ({keyword}) found {len(articles)} articles, queueing...")
             for a in articles:
                 article_queue.put(a)
         except Exception as e:
@@ -77,6 +78,7 @@ def _run_finbert_consumer(
 
     while True:
         try:
+            log.debug("FinBERT consumer waiting for article...")
             item = article_queue.get(timeout=120)
         except queue.Empty:
             log.warning("FinBERT consumer: timed out waiting for articles — stopping")
