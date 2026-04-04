@@ -15,6 +15,20 @@ log = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer()
 
 
+def verify_token(token: str) -> dict:
+    """
+    Verify a raw JWT string and return its claims.
+    Raises jwt.PyJWTError on failure — callers must handle it.
+    Used for non-HTTP transports (e.g. WebSocket) where HTTPBearer can't be injected.
+    """
+    return jwt.decode(
+        token,
+        settings.supabase_jwt_secret,
+        algorithms=["HS256"],
+        audience="authenticated",
+    )
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> dict:

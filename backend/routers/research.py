@@ -1,17 +1,21 @@
 """
 routers/research.py
-GET /api/research/{ticker}          — Aggregated deep-dive
-GET /api/research/{ticker}/sentiment-status — Polling endpoint for new tickers
+GET  /api/research/{ticker}                    — Aggregated deep-dive
+GET  /api/research/{ticker}/sentiment-status   — Polling endpoint for new tickers
+WS   /api/research/{ticker}/scrape-stream      — Live scrape progress stream
 """
 
+import asyncio
 import logging
+import queue as stdlib_queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter, Depends, HTTPException
+import jwt as pyjwt
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 import db.supabase as db
 from core import ticker_cache
-from core.auth import get_current_user
+from core.auth import get_current_user, verify_token
 import services.market_service as market_service
 import services.pead_service as pead_service
 import services.sentiment_service as sentiment_service
@@ -45,13 +49,10 @@ def _get_or_create_ticker(ticker: str) -> dict:
     region = info.get("financialCurrency") or info.get("region") or ""
     country = info.get("country") or ""
 
-    # Insert into tracked_tickers with metadata
     db.insert_tracked_ticker(ticker=ticker, name=name, sector=sector, region=region, country=country)
-
-    # Update in-memory cache
     ticker_cache.add(ticker)
 
-    # Trigger background scrape
+    # Trigger background sentiment scrape (does NOT block this request)
     trigger_ondemand_scrape(ticker)
 
     return {
@@ -60,6 +61,8 @@ def _get_or_create_ticker(ticker: str) -> dict:
         "sentiment_ready": False,
         "added_by": None,
         "last_scraped": None,
+        "name": name,
+        "sector": sector,
     }
 
 
@@ -71,23 +74,19 @@ def get_research(ticker: str):
 
     name = tracked.get("name") or ticker
     sector = tracked.get("sector") or ""
-
     status = tracked.get("status", "tracking")
-    # If just inserted and status is still 'tracking' but was new, reflect it
     if status == "tracking" and not tracked.get("sentiment_ready") and not tracked.get("last_scraped"):
         status = "new"
 
     sentiment_ready = bool(tracked.get("sentiment_ready", False))
 
-    # Fetch price, sentiment, PEAD in parallel
+    # Always fetch price; fetch sentiment + pre-stored PEAD only when ready
     price_data = None
     sentiment_data = None
     pead_signal = None
 
     with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(market_service.get_price_data, ticker): "price",
-        }
+        futures: dict = {executor.submit(market_service.get_price_data, ticker): "price"}
         if sentiment_ready:
             futures[executor.submit(sentiment_service.get_sentiment_data, ticker)] = "sentiment"
             futures[executor.submit(pead_service.get_pead_signal, ticker)] = "pead"
@@ -108,14 +107,13 @@ def get_research(ticker: str):
     if price_data is None:
         raise HTTPException(status_code=502, detail=f"Could not fetch price data for {ticker}")
 
-    # If model exists but sentiment_ready, also fetch pead (it doesn't require sentiment)
-    if sentiment_ready and pead_signal is None:
+    # For new tickers compute PEAD immediately — it doesn't depend on sentiment
+    if not sentiment_ready and pead_signal is None:
         try:
-            pead_signal = pead_service.get_pead_signal(ticker)
+            pead_signal = pead_service.compute_pead_signal(ticker)
         except Exception as e:
-            log.error(f"PEAD signal fetch failed for {ticker}: {e}")
+            log.error(f"PEAD compute failed for new ticker {ticker}: {e}")
 
-    # Recent articles
     raw_articles = db.get_articles_for_ticker(ticker, limit=20)
     articles = [
         ArticleSummary(
@@ -153,11 +151,8 @@ def get_sentiment_status(ticker: str):
     ready = bool(tracked.get("sentiment_ready", False))
     article_count = db.get_sentiment_article_count(ticker)
 
-    # Rough estimate: ~2s per article for FinBERT, based on typical batch
     estimated_remaining: int | None = None
     if not ready:
-        # If we know how many have been processed and how many total expected
-        # Use a simple heuristic: 30 days of news ≈ 50 articles, ~100s total
         estimated_remaining = max(0, 100 - article_count * 2)
 
     return SentimentStatus(
@@ -165,3 +160,101 @@ def get_sentiment_status(ticker: str):
         article_count=article_count,
         estimated_seconds_remaining=estimated_remaining if not ready else None,
     )
+
+
+# ── WebSocket scrape stream ────────────────────────────────────────────────────
+
+# The router has a global Depends(get_current_user) which does not apply to
+# WebSocket routes (FastAPI skips non-HTTP dependencies on WS endpoints).
+# We verify the JWT manually via the ?token= query parameter instead.
+
+@router.websocket("/{ticker}/scrape-stream")
+async def scrape_stream(websocket: WebSocket, ticker: str, token: str | None = None):
+    """
+    Stream scrape-and-inference progress for a newly tracked ticker.
+
+    Client connects with: ws://.../api/research/{TICKER}/scrape-stream?token=<jwt>
+
+    Events pushed as JSON:
+        { stage, article_title, sentiment, articles_done, articles_total }
+
+    stage values:
+        "analyzing" — article just processed by FinBERT
+        "done"      — pipeline finished; sentiment_ready is now true
+        "error"     — auth failure or internal error
+    """
+    await websocket.accept()
+    ticker = ticker.upper()
+
+    # Verify JWT passed as query param
+    if not token:
+        await websocket.send_json({"stage": "error", "detail": "Missing token"})
+        await websocket.close(code=4001)
+        return
+
+    try:
+        verify_token(token)
+    except pyjwt.PyJWTError:
+        await websocket.send_json({"stage": "error", "detail": "Invalid or expired token"})
+        await websocket.close(code=4001)
+        return
+
+    # If ticker is already ready, there's nothing to stream
+    tracked = db.get_tracked_ticker(ticker)
+    if not tracked or tracked.get("sentiment_ready"):
+        await websocket.send_json({
+            "stage": "done", "articles_done": 0,
+            "article_title": None, "sentiment": None, "articles_total": None,
+        })
+        await websocket.close()
+        return
+
+    # The background scrape is triggered by _get_or_create_ticker (in get_research).
+    # It registers a queue in scrape_stream.py just before starting work.
+    # We poll for up to 3 seconds to let the thread get started.
+    from workers.scrape_stream import get_scrape_queue
+
+    event_queue = None
+    for _ in range(30):
+        event_queue = get_scrape_queue(ticker)
+        if event_queue is not None:
+            break
+        await asyncio.sleep(0.1)
+
+    if event_queue is None:
+        # Scrape hasn't started or already finished — send done and exit
+        await websocket.send_json({
+            "stage": "done", "articles_done": 0,
+            "article_title": None, "sentiment": None, "articles_total": None,
+        })
+        await websocket.close()
+        return
+
+    loop = asyncio.get_event_loop()
+
+    try:
+        while True:
+            try:
+                # Block in an executor thread so the event loop stays free
+                event = await loop.run_in_executor(
+                    None, lambda: event_queue.get(timeout=120)
+                )
+            except stdlib_queue.Empty:
+                log.warning(f"scrape-stream timed out for {ticker}")
+                break
+
+            await websocket.send_json({
+                "stage": event.stage,
+                "article_title": event.article_title,
+                "sentiment": event.sentiment,
+                "articles_done": event.articles_done,
+                "articles_total": event.articles_total,
+            })
+
+            if event.stage == "done":
+                break
+
+    except WebSocketDisconnect:
+        log.info(f"scrape-stream client disconnected for {ticker}")
+    finally:
+        await websocket.close()

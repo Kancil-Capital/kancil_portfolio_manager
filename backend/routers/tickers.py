@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import db.supabase as db
+from core import ticker_cache
 from core.auth import get_current_user
 from db.models import TrackedTicker
 
