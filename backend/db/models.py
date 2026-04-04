@@ -180,6 +180,7 @@ class NewsResponse(BaseModel):
 
 class TrackedTicker(BaseModel):
     ticker: str
+    name: str
     added_at: str
     added_by: str | None
     status: str

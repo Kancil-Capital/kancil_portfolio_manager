@@ -20,7 +20,6 @@ export type {
   ArticleWithTickers,
   NewsResponse,
   TrackedTicker,
-  AddTickerRequest,
   UpdateTickerRequest,
   UpdateTickerRequestStatus,
   GetCalendarParams,

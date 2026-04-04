@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart2, Calendar, Newspaper, CircleUser } from "lucide-react";
+import { BarChart2, Calendar, Newspaper, List, CircleUser } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 const navItems = [
   { label: "Research", href: "/research", icon: BarChart2 },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "News", href: "/news", icon: Newspaper },
+  { label: "Tickers", href: "/tickers", icon: List },
 ];
 
 export function Sidebar() {

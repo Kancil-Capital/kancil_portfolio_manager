@@ -6,6 +6,7 @@
  */
 import useSwr from 'swr';
 import type {
+  Arguments,
   Key,
   SWRConfiguration
 } from 'swr';
@@ -16,7 +17,6 @@ import type {
 } from 'swr/mutation';
 
 import type {
-  AddTickerRequest,
   HTTPValidationError,
   TrackedTicker,
   UpdateTickerRequest
@@ -151,79 +151,6 @@ export const useListTickers = <TError = unknown>(
   }
 }
 /**
- * @summary Add Ticker
- */
-export type addTickerResponse201 = {
-  data: TrackedTicker
-  status: 201
-}
-
-export type addTickerResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type addTickerResponseSuccess = (addTickerResponse201) & {
-  headers: Headers;
-};
-export type addTickerResponseError = (addTickerResponse422) & {
-  headers: Headers;
-};
-
-export type addTickerResponse = (addTickerResponseSuccess | addTickerResponseError)
-
-export const getAddTickerUrl = () => {
-
-
-
-
-  return `/api/tickers`
-}
-
-export const addTicker = async (addTickerRequest: AddTickerRequest, options?: RequestInit): Promise<addTickerResponse> => {
-
-  return fetcher<addTickerResponse>(getAddTickerUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      addTickerRequest,)
-  }
-);}
-
-
-
-
-export const getAddTickerMutationFetcher = ( options?: SecondParameter<typeof fetcher>) => {
-  return (_: Key, { arg }: { arg: AddTickerRequest }) => {
-    return addTicker(arg, options);
-  }
-}
-export const getAddTickerMutationKey = () => [`/api/tickers`] as const;
-
-export type AddTickerMutationResult = NonNullable<Awaited<ReturnType<typeof addTicker>>>
-
-/**
- * @summary Add Ticker
- */
-export const useAddTicker = <TError = HTTPValidationError>(
-   options?: { swr?:SWRMutationConfiguration<Awaited<ReturnType<typeof addTicker>>, TError, Key, AddTickerRequest, Awaited<ReturnType<typeof addTicker>>> & { swrKey?: string }, request?: SecondParameter<typeof fetcher>}
-) => {
-
-  const {swr: swrOptions, request: requestOptions} = options ?? {}
-
-  const swrKey = swrOptions?.swrKey ?? getAddTickerMutationKey();
-  const swrFn = getAddTickerMutationFetcher(requestOptions);
-
-  const query = useSWRMutation(swrKey, swrFn, swrOptions)
-
-  return {
-    swrKey,
-    ...query
-  }
-}
-/**
  * @summary Update Ticker Status
  */
 export type updateTickerStatusResponse200 = {
@@ -289,6 +216,78 @@ export const useUpdateTickerStatus = <TError = HTTPValidationError>(
 
   const swrKey = swrOptions?.swrKey ?? getUpdateTickerStatusMutationKey(ticker);
   const swrFn = getUpdateTickerStatusMutationFetcher(ticker, requestOptions);
+
+  const query = useSWRMutation(swrKey, swrFn, swrOptions)
+
+  return {
+    swrKey,
+    ...query
+  }
+}
+/**
+ * @summary Delete Ticker
+ */
+export type deleteTickerResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteTickerResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type deleteTickerResponseSuccess = (deleteTickerResponse204) & {
+  headers: Headers;
+};
+export type deleteTickerResponseError = (deleteTickerResponse422) & {
+  headers: Headers;
+};
+
+export type deleteTickerResponse = (deleteTickerResponseSuccess | deleteTickerResponseError)
+
+export const getDeleteTickerUrl = (ticker: string,) => {
+
+
+
+
+  return `/api/tickers/${ticker}`
+}
+
+export const deleteTicker = async (ticker: string, options?: RequestInit): Promise<deleteTickerResponse> => {
+
+  return fetcher<deleteTickerResponse>(getDeleteTickerUrl(ticker),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTickerMutationFetcher = (ticker: string, options?: SecondParameter<typeof fetcher>) => {
+  return (_: Key, __: { arg: Arguments }) => {
+    return deleteTicker(ticker, options);
+  }
+}
+export const getDeleteTickerMutationKey = (ticker: string,) => [`/api/tickers/${ticker}`] as const;
+
+export type DeleteTickerMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTicker>>>
+
+/**
+ * @summary Delete Ticker
+ */
+export const useDeleteTicker = <TError = HTTPValidationError>(
+  ticker: string, options?: { swr?:SWRMutationConfiguration<Awaited<ReturnType<typeof deleteTicker>>, TError, Key, Arguments, Awaited<ReturnType<typeof deleteTicker>>> & { swrKey?: string }, request?: SecondParameter<typeof fetcher>}
+) => {
+
+  const {swr: swrOptions, request: requestOptions} = options ?? {}
+
+  const swrKey = swrOptions?.swrKey ?? getDeleteTickerMutationKey(ticker);
+  const swrFn = getDeleteTickerMutationFetcher(ticker, requestOptions);
 
   const query = useSWRMutation(swrKey, swrFn, swrOptions)
 

@@ -21,7 +21,9 @@ export const fetcher = async <T>(
     },
   });
 
-  const body = res.ok ? await res.json() : await res.text();
+  const body = res.ok
+    ? res.status === 204 ? null : await res.json()
+    : await res.text();
 
   if (!res.ok) {
     throw new Error(`API ${res.status}: ${body}`);

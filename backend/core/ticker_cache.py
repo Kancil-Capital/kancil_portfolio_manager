@@ -25,5 +25,11 @@ def add(ticker: str) -> None:
         _tickers.sort()
 
 
+def remove(ticker: str) -> None:
+    """Remove a ticker from the cache (called when a ticker is deleted)."""
+    global _tickers
+    _tickers = [t for t in _tickers if t != ticker]
+
+
 def get_all() -> list[str]:
     return list(_tickers)

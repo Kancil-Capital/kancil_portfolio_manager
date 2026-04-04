@@ -64,6 +64,10 @@ def update_tracked_ticker(ticker: str, **fields) -> None:
     get_client().table("tracked_tickers").update(fields).eq("ticker", ticker).execute()
 
 
+def delete_tracked_ticker(ticker: str) -> None:
+    get_client().table("tracked_tickers").delete().eq("ticker", ticker).execute()
+
+
 def get_all_tracked_tickers(exclude_untracked: bool = True) -> list[dict]:
     query = get_client().table("tracked_tickers").select("*")
     if exclude_untracked:

@@ -4,11 +4,6 @@
  * Kancil Portfolio Manager API
  * OpenAPI spec version: 0.1.0
  */
-export interface AddTickerRequest {
-  ticker: string;
-  added_by?: string | null;
-}
-
 export interface ArticleSummary {
   id: string;
   title: string;
@@ -181,6 +176,7 @@ export interface TickerDeepDive {
 
 export interface TrackedTicker {
   ticker: string;
+  name: string;
   added_at: string;
   added_by: string | null;
   status: string;

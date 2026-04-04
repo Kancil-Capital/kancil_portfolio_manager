@@ -29,7 +29,7 @@ router = APIRouter(
 )
 
 
-def _get_or_create_ticker(ticker: str) -> dict:
+def _get_or_create_ticker(ticker: str, added_by: str | None = None) -> dict:
     """
     Return tracked_ticker row. If ticker is new, insert into tickers + tracked_tickers
     and trigger on-demand scrape.
@@ -48,7 +48,7 @@ def _get_or_create_ticker(ticker: str) -> dict:
     region = info.get("financialCurrency") or info.get("region") or ""
     country = info.get("country") or ""
 
-    db.insert_tracked_ticker(ticker=ticker, name=name, sector=sector, region=region, country=country)
+    db.insert_tracked_ticker(ticker=ticker, name=name, sector=sector, region=region, country=country, added_by=added_by)
     ticker_cache.add(ticker)
 
     # Trigger background sentiment scrape (does NOT block this request)
@@ -58,18 +58,18 @@ def _get_or_create_ticker(ticker: str) -> dict:
         "ticker": ticker,
         "status": "tracking",
         "sentiment_ready": False,
-        "added_by": None,
+        "added_by": added_by,
         "last_scraped": None,
         "name": name,
         "sector": sector,
     }
 
 
-@router.get("/{ticker}", response_model=TickerDeepDive, operation_id="getResearch", dependencies=[Depends(get_current_user)])
-def get_research(ticker: str):
+@router.get("/{ticker}", response_model=TickerDeepDive, operation_id="getResearch")
+def get_research(ticker: str, user: dict = Depends(get_current_user)):
     ticker = ticker.upper()
 
-    tracked = _get_or_create_ticker(ticker)
+    tracked = _get_or_create_ticker(ticker, added_by=user.get("email"))
 
     name = tracked.get("name") or ticker
     sector = tracked.get("sector") or ""
