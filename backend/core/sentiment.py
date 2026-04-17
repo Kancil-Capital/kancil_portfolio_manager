@@ -486,7 +486,7 @@ def get_sentiment_batch(articles: list[dict]) -> list[list[tuple[str, float, flo
 
     # Step 1: Build full texts and batch-process with spaCy
     full_texts = [f"{a['title']}\n\n{a['body']}" for a in articles]
-    docs = list(nlp.pipe(full_texts, batch_size=len(full_texts)))
+    docs = list(nlp.pipe(full_texts, batch_size=4))
 
     # Step 2: Extract entities per article using pre-computed docs
     per_article_entities = [
