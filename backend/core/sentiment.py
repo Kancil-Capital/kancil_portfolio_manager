@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 import logging
 
+import spacy
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
 warnings.filterwarnings("ignore")
 
 log = logging.getLogger(__name__)
@@ -37,9 +41,8 @@ _sector_patterns = None
 def get_spacy_nlp():
     global _spacy_nlp
     if _spacy_nlp is None:
-        import spacy
         try:
-            _spacy_nlp = spacy.load(ModelConfig.SPACY_MODEL)
+            _spacy_nlp = spacy.load(ModelConfig.SPACY_MODEL, disable=["tagger", "parser", "senter"])
         except OSError as e:
             raise RuntimeError(
                 f"spaCy model '{ModelConfig.SPACY_MODEL}' not installed. "
@@ -154,6 +157,24 @@ def get_sector_patterns():
     return _sector_patterns
 
 
+def get_phrase_matcher():
+    global _phrase_matcher
+    if _phrase_matcher is not None:
+        return _phrase_matcher
+    from spacy.matcher import PhraseMatcher
+    nlp = get_spacy_nlp()
+    matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
+    _, ticker_lookup_lower_inner, known_tickers_inner = get_ticker_lookup()
+    phrases_by_ticker: dict[str, list[str]] = {}
+    for name, tk in ticker_lookup_lower_inner.items():
+        if len(name) >= 4 and tk in known_tickers_inner:
+            phrases_by_ticker.setdefault(tk, []).append(name)
+    for tk, names in phrases_by_ticker.items():
+        matcher.add(tk, [nlp.make_doc(n) for n in names])
+    _phrase_matcher = matcher
+    return _phrase_matcher
+
+
 # ── Entity extraction ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -200,23 +221,6 @@ def extract_entities_with_positions(text: str) -> list[EntityMention]:
                 ))
 
     # 3. Phrase matcher (company names)
-    def get_phrase_matcher():
-        global _phrase_matcher
-        if _phrase_matcher is not None:
-            return _phrase_matcher
-        from spacy.matcher import PhraseMatcher
-        nlp = get_spacy_nlp()
-        matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
-        _, ticker_lookup_lower_inner, known_tickers_inner = get_ticker_lookup()
-        phrases_by_ticker: dict[str, list[str]] = {}
-        for name, tk in ticker_lookup_lower_inner.items():
-            if len(name) >= 4 and tk in known_tickers_inner:
-                phrases_by_ticker.setdefault(tk, []).append(name)
-        for tk, names in phrases_by_ticker.items():
-            matcher.add(tk, [nlp.make_doc(n) for n in names])
-        _phrase_matcher = matcher
-        return _phrase_matcher
-
     matcher = get_phrase_matcher()
     nlp = get_spacy_nlp()
     doc = nlp(text)
@@ -343,9 +347,6 @@ def get_source_weight(source: str) -> float:
 
 class SentimentAnalyzer:
     def __init__(self, model_name: str = ModelConfig.SENTIMENT_MODEL):
-        import torch
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
         self.device = torch.device(
             "cuda" if torch.cuda.is_available()
             else "mps" if torch.backends.mps.is_available()

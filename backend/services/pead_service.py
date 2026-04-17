@@ -9,6 +9,8 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import xgboost  # noqa: F401 — must import before torch to avoid libomp conflict on macOS
+import joblib
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -51,7 +53,6 @@ def get_models() -> dict | None:
         return None
 
     try:
-        import joblib
         _models = joblib.load(model_path)
         log.info(f"PEAD model loaded from {model_path}")
         return _models

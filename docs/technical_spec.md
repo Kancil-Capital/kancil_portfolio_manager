@@ -605,6 +605,12 @@ dependencies = [
 ]
 ```
 
+> **⚠️ macOS libomp import-order gotcha:** `xgboost` and `torch` both ship their own copy of the OpenMP runtime (`libomp`/`libiomp5`). On macOS, whichever one gets imported **second** tries to load its libomp on top of the first one's, and xgboost's C runtime segfaults during `Booster.__setstate__` (i.e. during `joblib.load(pead_model.joblib)`). Because uvicorn installs its own signal handlers, it swallows the segfault and the process just appears to hang forever during startup.
+>
+> **Rule:** `xgboost` must be imported **before** `torch`. This is enforced by an explicit `import xgboost` at the top of `services/pead_service.py` (marked `# noqa: F401`). In `main.py`, the `from routers import ...` line (which transitively imports `pead_service`) must stay **above** the `from workers.scheduler import ...` line (which transitively imports `core/sentiment.py` → `torch`).
+>
+> If you ever see the server hang at `Loading models: PEAD...` with no further output, this is almost certainly the cause — check that nothing has reordered those imports or removed the `import xgboost` from `pead_service.py`.
+
 ---
 
 ## 9. Deployment Plan

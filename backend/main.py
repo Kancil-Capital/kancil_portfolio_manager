@@ -21,14 +21,20 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────────────
     log.info("Starting Kancil Portfolio Manager API")
-    start_scheduler()
+
+    from core.sentiment import get_spacy_nlp, get_sentiment_analyzer, get_phrase_matcher
+    from services.pead_service import get_models
+    log.info("Loading models...")
+    get_models()
+    get_spacy_nlp()
+    get_phrase_matcher()
+    get_sentiment_analyzer()
+    log.info("Models loaded")
+
     rows = db.get_all_tracked_tickers(exclude_untracked=False)
     ticker_cache.load([r["ticker"] for r in rows])
 
-    # Optionally warm up FinBERT + spaCy at startup (uncomment for production)
-    # from core.sentiment import get_spacy_nlp, get_sentiment_analyzer
-    # get_spacy_nlp()
-    # get_sentiment_analyzer()
+    start_scheduler()
 
     yield
 
