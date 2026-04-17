@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 import db.supabase as db
-from core.sentiment import get_sentiment
+from core.sentiment import get_sentiment_batch
 from workers.scrapers import CNBCScraper, FinvizScraper, YFinanceScraper
 from workers.scrapers.base import Article
 
@@ -60,11 +60,11 @@ def _run_scraper_pool(
 def _run_finbert_consumer(
     article_queue: "queue.Queue[Article | None]",
     event_queue: "queue.Queue | None" = None,
+    batch_size: int = 10,
 ) -> int:
     """
-    Pull Articles from article_queue, run FinBERT immediately on each, accumulate
-    results in memory, then batch-upsert articles and insert sentiments only for
-    rows that were actually new (not duplicates).
+    Pull Articles from article_queue, buffer them into batches, and run
+    batched spaCy + FinBERT inference via get_sentiment_batch().
 
     Returns the count of articles FinBERT found entities in (including duplicates —
     the stream events reflect real inference work done).
@@ -76,37 +76,51 @@ def _run_finbert_consumer(
     processed: list[tuple[dict, list]] = []
     articles_done = 0
 
+    def _process_batch(buffer: list[Article]) -> None:
+        nonlocal articles_done, processed
+
+        batch_dicts = [
+            {"title": a.title, "body": a.body, "source": a.source, "author": a.author}
+            for a in buffer
+        ]
+        batch_results = get_sentiment_batch(batch_dicts)
+
+        for article, results in zip(buffer, batch_results):
+            if not results:
+                continue
+
+            processed.append((article.to_json(), results))
+            articles_done += 1
+
+            if event_queue is not None:
+                event_queue.put(ScrapeEvent(
+                    stage="analyzing",
+                    article_title=article.title,
+                    sentiment=results[0][1],
+                    articles_done=articles_done,
+                ))
+
+    buffer: list[Article] = []
+
     while True:
         try:
             log.debug("FinBERT consumer waiting for article...")
             item = article_queue.get(timeout=120)
         except queue.Empty:
             log.warning("FinBERT consumer: timed out waiting for articles — stopping")
+            if buffer:
+                _process_batch(buffer)
             break
 
         if item is None:  # sentinel
+            if buffer:
+                _process_batch(buffer)
             break
 
-        results = get_sentiment(
-            title=item.title,
-            body=item.body,
-            source=item.source,
-            author=item.author,
-        )
-
-        if not results:
-            continue  # no entities — skip entirely, don't bother persisting
-
-        processed.append((item.to_json(), results))
-        articles_done += 1
-
-        if event_queue is not None:
-            event_queue.put(ScrapeEvent(
-                stage="analyzing",
-                article_title=item.title,
-                sentiment=results[0][1],  # score of highest-confidence entity
-                articles_done=articles_done,
-            ))
+        buffer.append(item)
+        if len(buffer) >= batch_size:
+            _process_batch(buffer)
+            buffer = []
 
     # ── Batch persist ──────────────────────────────────────────────────────────
     # upsert_articles returns only newly inserted rows (duplicates silently ignored).

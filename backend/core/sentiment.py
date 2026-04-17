@@ -187,7 +187,7 @@ class EntityMention:
     relevance: float
 
 
-def extract_entities_with_positions(text: str) -> list[EntityMention]:
+def extract_entities_with_positions(text: str, doc=None) -> list[EntityMention]:
     ticker_lookup, ticker_lookup_lower, known_tickers = get_ticker_lookup()
     text_lower = text.lower()
 
@@ -223,7 +223,8 @@ def extract_entities_with_positions(text: str) -> list[EntityMention]:
     # 3. Phrase matcher (company names)
     matcher = get_phrase_matcher()
     nlp = get_spacy_nlp()
-    doc = nlp(text)
+    if doc is None:
+        doc = nlp(text)
 
     for match_id, start_i, end_i in matcher(doc):
         ticker = nlp.vocab.strings[match_id]
@@ -468,11 +469,118 @@ def get_sentiment(
 
 def get_sentiment_batch(articles: list[dict]) -> list[list[tuple[str, float, float]]]:
     """
-    Process multiple articles. Each dict: {title, body, source}.
+    Process multiple articles with batched spaCy + FinBERT inference.
+    Each dict: {title, body, source, author?}.
     Returns a list of results per article.
+
+    Memory optimization: instead of N×M separate FinBERT forward passes
+    (N articles × M entity groups each), this collects ALL contexts across
+    all articles into one flat list and runs a single analyze_batch() call.
+    spaCy docs are also pre-computed via nlp.pipe() instead of per-article nlp().
     """
     if not articles:
         return []
-    _ = get_spacy_nlp()
-    _ = get_sentiment_analyzer()
-    return [get_sentiment(a["title"], a["body"], a["source"], None) for a in articles]
+
+    nlp = get_spacy_nlp()
+    analyzer = get_sentiment_analyzer()
+
+    # Step 1: Build full texts and batch-process with spaCy
+    full_texts = [f"{a['title']}\n\n{a['body']}" for a in articles]
+    docs = list(nlp.pipe(full_texts, batch_size=len(full_texts)))
+
+    # Step 2: Extract entities per article using pre-computed docs
+    per_article_entities = [
+        extract_entities_with_positions(text, doc=doc)
+        for text, doc in zip(full_texts, docs)
+    ]
+
+    # Step 3: Collect ALL contexts across all articles into one flat list
+    all_contexts: list[str] = []
+    # For each article: list of (entity_key, slice_start, slice_end, relevances)
+    article_group_slices: list[list[tuple[str, int, int, list[float]]]] = []
+
+    for i, (text, entities) in enumerate(zip(full_texts, per_article_entities)):
+        if not entities:
+            article_group_slices.append([])
+            continue
+
+        entity_groups: dict[str, list[EntityMention]] = {}
+        for ent in entities:
+            entity_groups.setdefault(ent.ticker, []).append(ent)
+
+        seen_contexts: set[str] = set()
+        group_slices: list[tuple[str, int, int, list[float]]] = []
+
+        for key, mentions in entity_groups.items():
+            start_idx = len(all_contexts)
+            relevances: list[float] = []
+
+            for mention in mentions:
+                context = get_entity_context(text, mention, all_entities=entities, window=75)
+                context_key = context[:100]
+                if context_key not in seen_contexts:
+                    seen_contexts.add(context_key)
+                    all_contexts.append(context)
+                    relevances.append(mention.relevance)
+
+            end_idx = len(all_contexts)
+            if end_idx > start_idx:
+                group_slices.append((key, start_idx, end_idx, relevances))
+
+        article_group_slices.append(group_slices)
+
+    # Step 4: Single FinBERT forward pass for ALL contexts
+    if not all_contexts:
+        return [[] for _ in articles]
+
+    all_results = analyzer.analyze_batch(all_contexts)
+
+    # Step 5: Slice results back per article, per entity group
+    batch_output: list[list[tuple[str, float, float]]] = []
+
+    for i, group_slices in enumerate(article_group_slices):
+        if not group_slices:
+            batch_output.append([])
+            continue
+
+        source_weight = get_source_weight(articles[i].get("source", ""))
+        article_results: list[tuple[str, float, float]] = []
+
+        for key, s, e, relevances in group_slices:
+            sentiment_results = all_results[s:e]
+            total_weight = sum(relevances)
+            avg_sentiment = sum(
+                sc * r for (sc, _), r in zip(sentiment_results, relevances)
+            ) / total_weight
+            avg_confidence = sum(
+                c * r for (_, c), r in zip(sentiment_results, relevances)
+            ) / total_weight
+
+            max_relevance = max(relevances)
+            final_confidence = avg_confidence * source_weight * max_relevance
+
+            # Check entity type from original entities
+            entities = per_article_entities[i]
+            first_mention = next(
+                (ent for ent in entities if ent.ticker == key), None
+            )
+            if first_mention:
+                if first_mention.entity_type == "SECTOR":
+                    final_confidence *= 0.65
+                elif first_mention.entity_type == "REGION":
+                    final_confidence *= 0.75
+
+            if final_confidence >= ModelConfig.MIN_CONFIDENCE:
+                article_results.append((key, round(avg_sentiment, 4), round(final_confidence, 4)))
+
+        # Dedup + sort by confidence
+        article_results.sort(key=lambda x: x[2], reverse=True)
+        seen: set[str] = set()
+        unique: list[tuple[str, float, float]] = []
+        for r in article_results:
+            if r[0] not in seen:
+                seen.add(r[0])
+                unique.append(r)
+        batch_output.append(unique)
+
+    return batch_output

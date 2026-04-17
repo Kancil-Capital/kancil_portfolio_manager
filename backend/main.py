@@ -28,7 +28,8 @@ async def lifespan(app: FastAPI):
     get_models()
     get_spacy_nlp()
     get_phrase_matcher()
-    get_sentiment_analyzer()
+    analyzer = get_sentiment_analyzer()
+    analyzer.analyze_batch(["Warmup inference pass."] * 8)
     log.info("Models loaded")
 
     rows = db.get_all_tracked_tickers(exclude_untracked=False)
