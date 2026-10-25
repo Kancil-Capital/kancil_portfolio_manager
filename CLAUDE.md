@@ -66,8 +66,9 @@ supabase stop
 
 - Schema lives in `backend/supabase/migrations/` (timestamped `.sql` files); every schema change is a new migration, reviewed in a PR. Never edit a migration that has already been applied, and never change the production schema through the Supabase dashboard.
 - Develop against the local stack (`supabase start`), not production. `supabase/seed.sql` holds small fake data and only runs locally.
-- Production gets migrations via `supabase db push` (planned: run by CI on merge to `main`).
-- `docs/migrations/001_v1_schema.sql` is the old hand-applied schema, kept for reference until the baseline migration (`supabase db pull`) replaces it.
+- `.env.example` files point at the local stack by default; production values are commented out. Local auth uses `localhost:3000` as its redirect URL.
+- CI (`.github/workflows/`): `db-check.yml` runs on PRs touching `backend/supabase/` — applies all migrations + seed to a fresh DB and dry-runs `db push` against production. `db-deploy.yml` runs `supabase db push` on merge to `main`. Both authenticate with the `SUPABASE_ACCESS_TOKEN` repo secret only (no DB password needed).
+- The first migration (`*_remote_schema.sql`) is a baseline pulled from production; it replaced the old hand-applied `docs/migrations/001_v1_schema.sql`.
 
 ## Architecture
 
