@@ -66,7 +66,7 @@ supabase stop
 
 - Schema lives in `backend/supabase/migrations/` (timestamped `.sql` files); every schema change is a new migration, reviewed in a PR. Never edit a migration that has already been applied, and never change the production schema through the Supabase dashboard.
 - Develop against the local stack (`supabase start`), not production. `supabase/seed.sql` holds small fake data and only runs locally.
-- `.env.example` files point at the local stack by default; production values are commented out. Local auth uses `localhost:3000` as its redirect URL.
+- Env files, same layout in `backend/` and `frontend/`: `.env` holds production/shared values; an optional `.env.local` overrides the Supabase URL and keys to point at the local stack (values from `supabase status -o env`). Delete or rename `.env.local` to go back to production. Local auth uses `localhost:3000` as its redirect URL.
 - CI (`.github/workflows/`): `db-check.yml` runs on PRs touching `backend/supabase/` — applies all migrations + seed to a fresh DB and dry-runs `db push` against production. `db-deploy.yml` runs `supabase db push` on merge to `main`. Both authenticate with the `SUPABASE_ACCESS_TOKEN` repo secret only (no DB password needed).
 - The first migration (`*_remote_schema.sql`) is a baseline pulled from production; it replaced the old hand-applied `docs/migrations/001_v1_schema.sql`.
 
@@ -131,7 +131,7 @@ SWR hooks for all endpoints (`useTickerData`, `useCalendar`, `useNews`). Skeleto
 
 ## Environment Variables
 
-Backend (`backend/.env`):
+Backend (`backend/.env`; `.env.local` overrides it for local Supabase):
 ```
 SUPABASE_URL
 SUPABASE_SECRET_KEY
@@ -140,7 +140,7 @@ ALPHA_VANTAGE_API_KEY
 CORS_ORIGINS=["http://localhost:3000"]
 ```
 
-Frontend (`frontend/.env.local`):
+Frontend (`frontend/.env`; `.env.local` overrides it for local Supabase):
 ```
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 NEXT_PUBLIC_SUPABASE_URL
