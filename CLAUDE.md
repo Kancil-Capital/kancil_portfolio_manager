@@ -16,7 +16,8 @@ kancil_portfolio_manager/
 │   ├── services/      # Business logic
 │   ├── workers/       # Background jobs (APScheduler, runs in-process with FastAPI)
 │   ├── db/            # Supabase client + Pydantic models
-│   └── core/          # Config, FinBERT inference
+│   ├── core/          # Config, FinBERT inference
+│   └── supabase/      # Supabase CLI project: config.toml, migrations/, seed.sql
 ├── docs/              # All spec documents
 └── models/            # Trained ML artifacts (pead_model.joblib)
 ```
@@ -49,6 +50,24 @@ uv run ruff check .                            # lint
 make dev           # starts both frontend and backend in parallel
 make install       # installs deps for both
 ```
+
+**Database** (Supabase CLI, run from `backend/`; needs Docker running):
+```bash
+cd backend
+supabase start                     # local Postgres + Auth + Studio (http://localhost:54323)
+supabase status -o env             # local URL + keys to put in backend/.env and frontend/.env.local
+supabase db diff -f <name>         # turn local schema changes into supabase/migrations/<ts>_<name>.sql
+supabase migration new <name>      # or write a migration by hand
+supabase db reset                  # rebuild local DB from all migrations + supabase/seed.sql
+supabase stop
+```
+
+### Database workflow
+
+- Schema lives in `backend/supabase/migrations/` (timestamped `.sql` files); every schema change is a new migration, reviewed in a PR. Never edit a migration that has already been applied, and never change the production schema through the Supabase dashboard.
+- Develop against the local stack (`supabase start`), not production. `supabase/seed.sql` holds small fake data and only runs locally.
+- Production gets migrations via `supabase db push` (planned: run by CI on merge to `main`).
+- `docs/migrations/001_v1_schema.sql` is the old hand-applied schema, kept for reference until the baseline migration (`supabase db pull`) replaces it.
 
 ## Architecture
 
