@@ -17,6 +17,7 @@ import services.market_service as market_service
 from db.models import (
     KeywordCount,
     LagCorrelation,
+    ScatterPoint,
     SentimentDaily,
     SentimentData,
     SentimentStats,
@@ -54,12 +55,13 @@ def _compute_lag_correlations(
     daily_sentiment: pd.Series,
     ticker: str,
     max_lag: int = 8,
-) -> list[LagCorrelation]:
-    """Correlate daily sentiment[t] with price return[t+lag]."""
+) -> tuple[list[LagCorrelation], list[ScatterPoint]]:
+    """Correlate daily sentiment[t] with price return[t+lag].
+    Returns (correlations, scatter_points) where scatter_points are 1d lag pairs."""
     try:
         price_df = market_service.get_raw_price_df(ticker, period="1y")
         if price_df is None or len(price_df) < 20:
-            return []
+            return [], []
 
         price_returns = price_df["close"].pct_change().rename("ret")
         price_returns.index = price_returns.index.normalize()
@@ -68,6 +70,7 @@ def _compute_lag_correlations(
         sent.index = pd.to_datetime(sent.index).tz_localize(None).normalize()
 
         correlations = []
+        scatter_points: list[ScatterPoint] = []
         for lag in range(1, max_lag + 1):
             shifted = sent.shift(lag)
             merged = pd.concat([shifted, price_returns], axis=1).dropna()
@@ -76,16 +79,22 @@ def _compute_lag_correlations(
             corr = merged.iloc[:, 0].corr(merged.iloc[:, 1])
             if not np.isnan(corr):
                 correlations.append(LagCorrelation(lag=lag, correlation=round(float(corr), 4)))
+            if lag == 1:
+                for _, row in merged.iterrows():
+                    scatter_points.append(ScatterPoint(
+                        sentiment=round(float(row.iloc[0]), 4),
+                        next_day_return=round(float(row.iloc[1]) * 100, 4),
+                    ))
 
-        return correlations
+        return correlations, scatter_points
     except Exception as e:
         log.error(f"Lag correlation failed for {ticker}: {e}")
-        return []
+        return [], []
 
 
 # ── Main service function ──────────────────────────────────────────────────────
 
-def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
+def get_sentiment_data(ticker: str, days: int = 180, min_confidence: float | None = None) -> SentimentData | None:
     """
     Build SentimentData for a ticker.
     Queries sentiments via Supabase RPC, aggregates daily stats, computes analytics.
@@ -130,6 +139,12 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
     if ticker_df.empty:
         return None
 
+    # Apply confidence filter
+    if min_confidence is not None:
+        ticker_df = ticker_df[ticker_df["confidence"] >= min_confidence]
+        if ticker_df.empty:
+            return None
+
     # ── Daily aggregation ──────────────────────────────────────────────────────
     daily_records: list[SentimentDaily] = []
     for dt, group in ticker_df.groupby("date"):
@@ -149,17 +164,19 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
 
     # ── Lag correlations ───────────────────────────────────────────────────────
     daily_mean = ticker_df.groupby("date")["sentiment"].mean()
-    lag_correlations = _compute_lag_correlations(daily_mean, ticker)
+    lag_correlations, scatter_points = _compute_lag_correlations(daily_mean, ticker)
 
     # ── Stats ──────────────────────────────────────────────────────────────────
     cutoff_30d = end_date - timedelta(days=30)
     recent_df = ticker_df[ticker_df["timestamp"] >= cutoff_30d.isoformat()]
     mean_30d = float(recent_df["sentiment"].mean()) if not recent_df.empty else 0.0
+    median_30d = float(recent_df["sentiment"].median()) if not recent_df.empty else 0.0
 
     all_scores = ticker_df["sentiment"].values
     total = len(all_scores)
     positive_count = int((all_scores > 0.1).sum())
     negative_count = int((all_scores < -0.1).sum())
+    neutral_count = total - positive_count - negative_count
     net_sentiment = float(all_scores.mean())
     sentiment_ratio = positive_count / total if total > 0 else 0.5
 
@@ -172,8 +189,12 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
 
     stats = SentimentStats(
         mean_30d=round(mean_30d, 4),
+        median_30d=round(median_30d, 4),
         net_sentiment=round(net_sentiment, 4),
         total_articles=total,
+        positive_count=positive_count,
+        neutral_count=neutral_count,
+        negative_count=negative_count,
         sentiment_ratio=round(sentiment_ratio, 4),
         best_lag=best_lag,
         best_lag_correlation=round(best_lag_corr, 4),
@@ -183,11 +204,15 @@ def get_sentiment_data(ticker: str, days: int = 180) -> SentimentData | None:
     titles = ticker_df["title"].dropna().tolist() if "title" in ticker_df.columns else []
     keywords_list = _extract_keywords(titles)
 
+    scores = [round(float(s), 4) for s in all_scores.tolist()]
+
     return SentimentData(
         daily=daily_records,
         lag_correlations=lag_correlations,
         stats=stats,
         keywords=keywords_list,
+        scores=scores,
+        scatter_points=scatter_points,
     )
 
 

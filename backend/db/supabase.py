@@ -111,12 +111,14 @@ def get_articles_paginated(
     ticker: str | None = None,
     sentiment_filter: str | None = None,  # "positive" | "neutral" | "negative"
     source: str | None = None,
+    min_confidence: float | None = None,
+    sort_by: str = "recent",
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[dict], int]:
     """
     Return (articles, total_count) with optional filters.
-    Uses the get_articles_paginated RPC to allow ordering by articles.timestamp.
+    Uses the get_articles_paginated RPC which supports confidence and sort_by.
     """
     rows = (
         get_client()
@@ -126,6 +128,8 @@ def get_articles_paginated(
                 "p_ticker": ticker,
                 "p_sentiment": sentiment_filter,
                 "p_source": source,
+                "p_min_confidence": min_confidence,
+                "p_sort_by": sort_by,
                 "p_limit": limit,
                 "p_offset": offset,
             },

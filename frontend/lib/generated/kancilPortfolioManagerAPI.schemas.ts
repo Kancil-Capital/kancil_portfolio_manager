@@ -23,6 +23,7 @@ export interface ArticleWithTickers {
   sentiment: number;
   confidence: number;
   tickers: string[];
+  affected?: string | null;
 }
 
 export interface CalendarEvent {
@@ -131,6 +132,11 @@ export interface PriceData {
   technicals: Technicals;
 }
 
+export interface ScatterPoint {
+  sentiment: number;
+  next_day_return: number;
+}
+
 export interface SentimentDaily {
   date: string;
   mean: number;
@@ -142,8 +148,12 @@ export interface SentimentDaily {
 
 export interface SentimentStats {
   mean_30d: number;
+  median_30d: number;
   net_sentiment: number;
   total_articles: number;
+  positive_count: number;
+  neutral_count: number;
+  negative_count: number;
   sentiment_ratio: number;
   best_lag: number;
   best_lag_correlation: number;
@@ -154,6 +164,8 @@ export interface SentimentData {
   lag_correlations: LagCorrelation[];
   stats: SentimentStats;
   keywords: KeywordCount[];
+  scores: number[];
+  scatter_points: ScatterPoint[];
 }
 
 export interface SentimentStatus {
@@ -197,6 +209,15 @@ export interface UpdateTickerRequest {
   status: UpdateTickerRequestStatus;
 }
 
+export type GetTickerSentimentParams = {
+min_confidence?: number | null;
+/**
+ * @minimum 7
+ * @maximum 730
+ */
+days?: number;
+};
+
 export type GetCalendarParams = {
 /**
  * @minimum 1
@@ -209,6 +230,11 @@ export type GetNewsParams = {
 ticker?: string | null;
 sentiment?: string | null;
 source?: string | null;
+min_confidence?: number | null;
+/**
+ * @pattern ^(recent|oldest|impact_desc|impact_asc|positive|negative)$
+ */
+sort_by?: string;
 /**
  * @minimum 1
  * @maximum 100

@@ -11,7 +11,9 @@ import type {
 } from 'swr';
 
 import type {
+  GetTickerSentimentParams,
   HTTPValidationError,
+  SentimentData,
   SentimentStatus,
   TickerDeepDive
 } from '../kancilPortfolioManagerAPI.schemas';
@@ -83,6 +85,84 @@ export const useGetResearch = <TError = HTTPValidationError>(
   const isEnabled = swrOptions?.enabled !== false && !!(ticker)
   const swrKey = swrOptions?.swrKey ?? (() => isEnabled ? getGetResearchKey(ticker) : null);
   const swrFn = () => getResearch(ticker, requestOptions)
+
+  const query = useSwr<Awaited<ReturnType<typeof swrFn>>, TError>(swrKey, swrFn, swrOptions)
+
+  return {
+    swrKey,
+    ...query
+  }
+}
+/**
+ * @summary Get Ticker Sentiment
+ */
+export type getTickerSentimentResponse200 = {
+  data: SentimentData
+  status: 200
+}
+
+export type getTickerSentimentResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getTickerSentimentResponseSuccess = (getTickerSentimentResponse200) & {
+  headers: Headers;
+};
+export type getTickerSentimentResponseError = (getTickerSentimentResponse422) & {
+  headers: Headers;
+};
+
+export type getTickerSentimentResponse = (getTickerSentimentResponseSuccess | getTickerSentimentResponseError)
+
+export const getGetTickerSentimentUrl = (ticker: string,
+    params?: GetTickerSentimentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/research/${ticker}/sentiment?${stringifiedParams}` : `/api/research/${ticker}/sentiment`
+}
+
+export const getTickerSentiment = async (ticker: string,
+    params?: GetTickerSentimentParams, options?: RequestInit): Promise<getTickerSentimentResponse> => {
+
+  return fetcher<getTickerSentimentResponse>(getGetTickerSentimentUrl(ticker,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+export const getGetTickerSentimentKey = (ticker: string,
+    params?: GetTickerSentimentParams,) => [`/api/research/${ticker}/sentiment`, ...(params ? [params]: [])] as const;
+
+export type GetTickerSentimentQueryResult = NonNullable<Awaited<ReturnType<typeof getTickerSentiment>>>
+
+/**
+ * @summary Get Ticker Sentiment
+ */
+export const useGetTickerSentiment = <TError = HTTPValidationError>(
+  ticker: string,
+    params?: GetTickerSentimentParams, options?: { swr?:SWRConfiguration<Awaited<ReturnType<typeof getTickerSentiment>>, TError> & { swrKey?: Key, enabled?: boolean }, request?: SecondParameter<typeof fetcher> }
+) => {
+  const {swr: swrOptions, request: requestOptions} = options ?? {}
+
+  const isEnabled = swrOptions?.enabled !== false && !!(ticker)
+  const swrKey = swrOptions?.swrKey ?? (() => isEnabled ? getGetTickerSentimentKey(ticker,params) : null);
+  const swrFn = () => getTickerSentiment(ticker,params, requestOptions)
 
   const query = useSwr<Awaited<ReturnType<typeof swrFn>>, TError>(swrKey, swrFn, swrOptions)
 

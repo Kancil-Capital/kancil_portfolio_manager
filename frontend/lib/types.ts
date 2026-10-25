@@ -6,6 +6,7 @@ export type {
   PriceData,
   SentimentDaily as SentimentDay,
   LagCorrelation,
+  ScatterPoint,
   SentimentStats,
   KeywordCount as Keyword,
   SentimentData,

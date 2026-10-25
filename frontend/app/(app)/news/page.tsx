@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
-import { Rss, ExternalLink, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Rss, ExternalLink, ChevronLeft, ChevronRight, ChevronDown, ArrowUpDown } from "lucide-react";
 
 import { useGetNews } from "@/lib/generated/news/news";
 import { useGetTrackedSymbols } from "@/lib/generated/tickers/tickers";
@@ -16,10 +16,21 @@ import {
 import type { ArticleWithTickers } from "@/lib/generated/kancilPortfolioManagerAPI.schemas";
 
 const PAGE_SIZE = 20;
+const SOURCES = ["CNBC", "Finviz", "Yahoo Finance"];
 
 // ── Sentiment filter options ───────────────────────────────────────────────────
 
 type SentimentFilter = "all" | "positive" | "neutral" | "negative";
+type SortBy = "recent" | "oldest" | "positive" | "negative" | "impact_desc" | "impact_asc";
+
+const SORT_OPTIONS: { label: string; value: SortBy }[] = [
+  { label: "Newest", value: "recent" },
+  { label: "Oldest", value: "oldest" },
+  { label: "Most Positive", value: "positive" },
+  { label: "Most Negative", value: "negative" },
+  { label: "Highest Impact", value: "impact_desc" },
+  { label: "Lowest Impact", value: "impact_asc" },
+];
 
 const SENTIMENT_OPTIONS: { label: string; value: SentimentFilter }[] = [
   { label: "All", value: "all" },
@@ -251,6 +262,9 @@ export default function NewsPage() {
   const [page, setPage] = useState(1);
   const [ticker, setTicker] = useState<string>("");
   const [sentiment, setSentiment] = useState<SentimentFilter>("all");
+  const [source, setSource] = useState<string>("");
+  const [minConfidence, setMinConfidence] = useState(0);
+  const [sortBy, setSortBy] = useState<SortBy>("recent");
 
   const { data: symbolsRes } = useGetTrackedSymbols();
   const trackedSymbols = symbolsRes?.status === 200 ? symbolsRes.data : [];
@@ -260,6 +274,9 @@ export default function NewsPage() {
   const { data: res, isLoading } = useGetNews({
     ticker: ticker || undefined,
     sentiment: sentiment === "all" ? undefined : sentiment,
+    source: source || undefined,
+    min_confidence: minConfidence > 0 ? minConfidence : undefined,
+    sort_by: sortBy,
     limit: PAGE_SIZE,
     offset,
   });
@@ -267,17 +284,15 @@ export default function NewsPage() {
   const articles = res?.status === 200 ? res.data.articles : [];
   const total = res?.status === 200 ? res.data.total : 0;
 
-  function handleTickerChange(val: string) {
-    setTicker(val);
-    setPage(1);
-  }
+  const resetPage = useCallback(() => setPage(1), []);
 
-  function handleSentimentChange(val: SentimentFilter) {
-    setSentiment(val);
-    setPage(1);
-  }
+  function handleTickerChange(val: string) { setTicker(val); resetPage(); }
+  function handleSentimentChange(val: SentimentFilter) { setSentiment(val); resetPage(); }
+  function handleSourceChange(val: string) { setSource(val); resetPage(); }
+  function handleSortChange(val: SortBy) { setSortBy(val); resetPage(); }
+  function handleConfidenceChange(val: number) { setMinConfidence(val); resetPage(); }
 
-  const hasFilters = !!ticker || sentiment !== "all";
+  const hasFilters = !!ticker || sentiment !== "all" || !!source || minConfidence > 0 || sortBy !== "recent";
 
   return (
     <div className="flex flex-col gap-4 animate-fade-up">
@@ -312,6 +327,22 @@ export default function NewsPage() {
           <ChevronDown size={10} className="pointer-events-none absolute right-2" style={{ color: "#6B7280" }} />
         </div>
 
+        {/* Source dropdown */}
+        <div className="relative flex items-center">
+          <select
+            value={source}
+            onChange={(e) => handleSourceChange(e.target.value)}
+            className="h-8 appearance-none rounded border pl-2.5 pr-7 text-xs outline-none transition-colors focus:border-[#3B82F6]"
+            style={{ background: "#111827", borderColor: "#374151", color: source ? "#F9FAFB" : "#6B7280" }}
+          >
+            <option value="">All sources</option>
+            {SOURCES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <ChevronDown size={10} className="pointer-events-none absolute right-2" style={{ color: "#6B7280" }} />
+        </div>
+
         {/* Divider */}
         <div className="h-5 w-px" style={{ background: "#374151" }} />
 
@@ -340,13 +371,54 @@ export default function NewsPage() {
           })}
         </div>
 
+        {/* Divider */}
+        <div className="h-5 w-px" style={{ background: "#374151" }} />
+
+        {/* Sort dropdown */}
+        <div className="relative flex items-center gap-1.5">
+          <ArrowUpDown size={10} style={{ color: "#6B7280" }} />
+          <select
+            value={sortBy}
+            onChange={(e) => handleSortChange(e.target.value as SortBy)}
+            className="h-8 appearance-none rounded border pl-2 pr-7 text-xs outline-none transition-colors focus:border-[#3B82F6]"
+            style={{ background: "#111827", borderColor: "#374151", color: "#F9FAFB" }}
+          >
+            {SORT_OPTIONS.map(({ label, value }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <ChevronDown size={10} className="pointer-events-none absolute right-2" style={{ color: "#6B7280" }} />
+        </div>
+
+        {/* Divider */}
+        <div className="h-5 w-px" style={{ background: "#374151" }} />
+
+        {/* Confidence slider */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: "#6B7280" }}>
+            Conf ≥
+          </span>
+          <span className="w-7 font-mono text-[11px]" style={{ color: "#3B82F6" }}>
+            {Math.round(minConfidence * 100)}%
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={minConfidence}
+            onChange={(e) => handleConfidenceChange(parseFloat(e.target.value))}
+            className="w-24 accent-blue-500"
+            style={{ height: 4 }}
+          />
+        </div>
+
         {/* Clear all */}
         {hasFilters && (
           <button
             onClick={() => {
-              setTicker("");
-              setSentiment("all");
-              setPage(1);
+              setTicker(""); setSentiment("all"); setSource("");
+              setMinConfidence(0); setSortBy("recent"); setPage(1);
             }}
             className="ml-auto text-xs transition-colors hover:text-[#F9FAFB]"
             style={{ color: "#6B7280" }}

@@ -51,8 +51,12 @@ class LagCorrelation(BaseModel):
 
 class SentimentStats(BaseModel):
     mean_30d: float
+    median_30d: float
     net_sentiment: float
     total_articles: int
+    positive_count: int
+    neutral_count: int
+    negative_count: int
     sentiment_ratio: float   # positive / total
     best_lag: int
     best_lag_correlation: float
@@ -63,11 +67,18 @@ class KeywordCount(BaseModel):
     count: int
 
 
+class ScatterPoint(BaseModel):
+    sentiment: float
+    next_day_return: float
+
+
 class SentimentData(BaseModel):
     daily: list[SentimentDaily]
     lag_correlations: list[LagCorrelation]
     stats: SentimentStats
     keywords: list[KeywordCount]
+    scores: list[float]
+    scatter_points: list[ScatterPoint]
 
 
 # ── PEAD ───────────────────────────────────────────────────────────────────────
@@ -127,6 +138,7 @@ class ArticleWithTickers(BaseModel):
     sentiment: float
     confidence: float
     tickers: list[str]
+    affected: str | None = None
 
 
 # ── Research deep-dive ─────────────────────────────────────────────────────────

@@ -19,7 +19,8 @@ from core.auth import get_current_user, verify_token
 import services.market_service as market_service
 import services.pead_service as pead_service
 import services.sentiment_service as sentiment_service
-from db.models import ArticleSummary, SentimentStatus, TickerDeepDive
+from fastapi import Query
+from db.models import ArticleSummary, SentimentData, SentimentStatus, TickerDeepDive
 from workers.scheduler import trigger_ondemand_scrape
 
 log = logging.getLogger(__name__)
@@ -138,6 +139,19 @@ def get_research(ticker: str, user: dict = Depends(get_current_user)):
         pead=pead_signal,
         articles=articles,
     )
+
+
+@router.get("/{ticker}/sentiment", response_model=SentimentData, operation_id="getTickerSentiment", dependencies=[Depends(get_current_user)])
+def get_ticker_sentiment(
+    ticker: str,
+    min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
+    days: int = Query(default=180, ge=7, le=730),
+):
+    ticker = ticker.upper()
+    data = sentiment_service.get_sentiment_data(ticker, days=days, min_confidence=min_confidence)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No sentiment data for '{ticker}'")
+    return data
 
 
 @router.get("/{ticker}/sentiment-status", response_model=SentimentStatus, operation_id="getSentimentStatus", dependencies=[Depends(get_current_user)])

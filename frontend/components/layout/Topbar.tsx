@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Clock } from "lucide-react";
 
 const pageTitles: Record<string, string> = {
   "/research": "Research",
@@ -31,16 +30,7 @@ export function Topbar() {
     >
       <h1 className="text-sm font-medium text-white">{title}</h1>
 
-      <div className="flex items-center gap-3">
-        {/* Market status placeholder */}
-        <div
-          className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium"
-          style={{ background: "#1c1507", color: "#f59e0b", border: "1px solid #78350f" }}
-        >
-          <Clock size={11} />
-          Market Closed
-        </div>
-      </div>
+      <div className="flex items-center gap-3" />
     </header>
   );
 }

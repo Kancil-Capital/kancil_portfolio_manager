@@ -357,7 +357,6 @@ export default function TickersPage() {
   const activeCount = tickers.filter((t) => t.status !== "untracked").length;
 
   function handleDeleted(ticker: string) {
-    // Optimistically remove from cache, then revalidate
     mutate(
       getListTickersKey(),
       (current: unknown) => {

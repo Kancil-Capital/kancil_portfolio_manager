@@ -1,11 +1,12 @@
 "use client";
 
-import { use, useEffect } from "react";
+import { use, useEffect, useState } from "react";
 import { AlertCircle, BarChart2 } from "lucide-react";
 
 import { useTickerData } from "@/hooks/useTickerData";
 import { useSentimentStatus } from "@/hooks/useSentimentStatus";
 import { useScrapeStream } from "@/hooks/useScrapeStream";
+import { useSentimentData } from "@/hooks/useSentimentData";
 
 import { TickerHeader } from "@/components/research/TickerHeader";
 import { FetchingBanner } from "@/components/research/FetchingBanner";
@@ -14,6 +15,7 @@ import { SentimentPanel } from "@/components/research/SentimentPanel";
 import { NewsPanel } from "@/components/research/NewsPanel";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { LagHeatmap } from "@/components/charts/LagHeatmap";
+import { LagScatter } from "@/components/charts/LagScatter";
 import { KeywordCloud } from "@/components/charts/KeywordCloud";
 import { Skeleton, SkeletonCard, SkeletonChart } from "@/components/ui/Skeleton";
 import { formatPct } from "@/lib/formatters";
@@ -95,7 +97,11 @@ function TechnicalPill({ label, value, color }: { label: string; value: string; 
 // ── Main content ───────────────────────────────────────────────────────────────
 
 function ResearchContent({ ticker }: { ticker: string }) {
+  const [minConfidence, setMinConfidence] = useState(0);
   const { data, error, isLoading, mutate } = useTickerData(ticker);
+
+  // Re-fetch just sentiment when confidence filter changes
+  const { data: filteredSentiment } = useSentimentData(ticker, minConfidence);
 
   // WebSocket live stream — active whenever sentiment isn't ready yet
   const { events: streamEvents, isStreaming } = useScrapeStream(
@@ -122,7 +128,9 @@ function ResearchContent({ ticker }: { ticker: string }) {
   }
   if (!data) return null;
 
-  const { price, sentiment, pead, articles } = data;
+  const { price, pead, articles } = data;
+  // Use filtered sentiment if confidence filter is active, otherwise use embedded data
+  const sentiment = minConfidence > 0 ? (filteredSentiment ?? data.sentiment) : data.sentiment;
   const t = price.technicals;
 
   return (
@@ -203,15 +211,20 @@ function ResearchContent({ ticker }: { ticker: string }) {
         {/* Sentiment panels — only when ready */}
         {sentiment && (
           <>
-            {/* Sentiment trend — 7 cols */}
+            {/* Sentiment panel — 7 cols */}
             <div className="col-span-7">
-              <SentimentPanel sentiment={sentiment} />
+              <SentimentPanel
+                sentiment={sentiment}
+                minConfidence={minConfidence}
+                onMinConfidenceChange={setMinConfidence}
+              />
             </div>
 
-            {/* Lag heatmap — 5 cols */}
-            <div className="col-span-5">
+            {/* Lag analysis — 5 cols */}
+            <div className="col-span-5 flex flex-col gap-4">
+              {/* Lag heatmap */}
               <div
-                className="rounded-lg border p-5 h-full"
+                className="rounded-lg border p-5"
                 style={{ background: "#1F2937", borderColor: "#374151" }}
               >
                 <div className="mb-4 flex items-center gap-2">
@@ -221,6 +234,21 @@ function ResearchContent({ ticker }: { ticker: string }) {
                 </div>
                 <LagHeatmap correlations={sentiment.lag_correlations} />
               </div>
+
+              {/* Lag scatter */}
+              {sentiment.scatter_points.length >= 5 && (
+                <div
+                  className="rounded-lg border p-5"
+                  style={{ background: "#1F2937", borderColor: "#374151" }}
+                >
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-xs font-medium uppercase tracking-widest" style={{ color: "#6B7280" }}>
+                      Sentiment vs Next-Day Return
+                    </span>
+                  </div>
+                  <LagScatter points={sentiment.scatter_points} />
+                </div>
+              )}
             </div>
           </>
         )}

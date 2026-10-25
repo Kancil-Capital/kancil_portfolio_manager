@@ -241,11 +241,13 @@ ALTER TABLE tracked_tickers
 -- Replaces the PostgREST joined-table query (which can't ORDER BY joined cols).
 -- =============================================================================
 CREATE OR REPLACE FUNCTION get_articles_paginated(
-  p_ticker        TEXT    DEFAULT NULL,
-  p_sentiment     TEXT    DEFAULT NULL,  -- 'positive' | 'neutral' | 'negative'
-  p_source        TEXT    DEFAULT NULL,
-  p_limit         INT     DEFAULT 20,
-  p_offset        INT     DEFAULT 0
+  p_ticker         TEXT    DEFAULT NULL,
+  p_sentiment      TEXT    DEFAULT NULL,  -- 'positive' | 'neutral' | 'negative'
+  p_source         TEXT    DEFAULT NULL,
+  p_min_confidence FLOAT   DEFAULT NULL,
+  p_sort_by        TEXT    DEFAULT 'recent',  -- 'recent'|'oldest'|'positive'|'negative'|'impact_desc'|'impact_asc'
+  p_limit          INT     DEFAULT 20,
+  p_offset         INT     DEFAULT 0
 )
 RETURNS TABLE (
   id          BIGINT,
@@ -274,8 +276,9 @@ AS $$
     FROM sentiments s
     INNER JOIN articles a ON a.id = s.article_id
     WHERE
-      (p_ticker    IS NULL OR s.affected = p_ticker)
-      AND (p_source IS NULL OR a.source  = p_source)
+      (p_ticker         IS NULL OR s.affected    = p_ticker)
+      AND (p_source     IS NULL OR a.source      = p_source)
+      AND (p_min_confidence IS NULL OR s.confidence >= p_min_confidence)
       AND (
         p_sentiment IS NULL
         OR (p_sentiment = 'positive' AND s.score >  0.1)
@@ -300,6 +303,12 @@ AS $$
     g.sentiment, g.confidence, g.tickers,
     c.total_count
   FROM grouped g, counted c
-  ORDER BY g.timestamp DESC
+  ORDER BY
+    CASE WHEN p_sort_by = 'oldest'      THEN g.timestamp    END ASC  NULLS LAST,
+    CASE WHEN p_sort_by = 'positive'    THEN g.sentiment    END DESC NULLS LAST,
+    CASE WHEN p_sort_by = 'negative'    THEN g.sentiment    END ASC  NULLS LAST,
+    CASE WHEN p_sort_by = 'impact_desc' THEN ABS(g.sentiment) END DESC NULLS LAST,
+    CASE WHEN p_sort_by = 'impact_asc'  THEN ABS(g.sentiment) END ASC  NULLS LAST,
+    g.timestamp DESC
   LIMIT p_limit OFFSET p_offset;
 $$;
