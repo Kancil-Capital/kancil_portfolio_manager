@@ -194,51 +194,6 @@ def get_sentiment_article_count(ticker: str) -> int:
     return result.count or 0
 
 
-# ── pead_signals ───────────────────────────────────────────────────────────────
-
-def get_latest_pead_signal(ticker: str) -> dict | None:
-    rows = (
-        get_client()
-        .table("pead_signals")
-        .select("*")
-        .eq("ticker", ticker)
-        .order("computed_at", desc=True)
-        .limit(1)
-        .execute()
-        .data
-    )
-    return rows[0] if rows else None
-
-
-def upsert_pead_signal(data: dict) -> None:
-    get_client().table("pead_signals").insert(data).execute()
-
-
-def get_pead_signals_for_tickers(tickers: list[str]) -> list[dict]:
-    """Return latest pead_signal per ticker for the calendar view."""
-    if not tickers:
-        return []
-    rows = (
-        get_client()
-        .table("pead_signals")
-        .select("*")
-        .in_("ticker", tickers)
-        .order("computed_at", desc=True)
-        .execute()
-        .data
-    ) or []
-
-    # Keep only the most recent per ticker
-    seen: set[str] = set()
-    latest: list[dict] = []
-    for row in rows:
-        t = row.get("ticker", "")
-        if t not in seen:
-            seen.add(t)
-            latest.append(row)
-    return latest
-
-
 # ── eps_cache ──────────────────────────────────────────────────────────────────
 
 def get_eps_cache(ticker: str) -> list[dict]:

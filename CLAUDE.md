@@ -80,12 +80,12 @@ Next.js Frontend (SWR hooks)
     ↕ /api/* → proxied to FastAPI via next.config.ts rewrites
 FastAPI Backend  (localhost:8000)
     ├── On-demand: price/technicals (yfinance), PEAD features (math), ML inference
+    │   (PEAD signals cached in memory for 12h — not stored in the DB)
     └── Cached: EPS/SUE (Alpha Vantage, ~90-day TTL), news sentiment (FinBERT, stored)
         ↕
 Supabase PostgreSQL
     ↑ Background workers (APScheduler, in-process)
-    ├── sentiment_pipeline.py — 07:00 UTC daily
-    └── pead_refresh.py — 02:00 UTC nightly
+    └── sentiment_pipeline.py — 07:00 UTC daily
 ```
 
 ### Key Backend Services
@@ -103,11 +103,10 @@ New ticker API flow: return `status: "new"`, `sentiment_ready: false` immediatel
 
 ### Database Tables
 
-**Existing (from SentimentPulse):** `articles`, `sentiments`, `tickers`
+**Existing (from SentimentPulse):** `articles`, `sentiments`
 
 **New for v1:**
 - `tracked_tickers` — ticker lifecycle management (`ticker`, `status`, `sentiment_ready`, `last_scraped`)
-- `pead_signals` — pre-computed nightly signals (28 features + `outperform_prob_5d/10d/20d`, `best_horizon`)
 - `eps_cache` — Alpha Vantage EPS/SUE cache with `fetched_at` for TTL enforcement
 
 ### Authentication
@@ -125,7 +124,7 @@ SWR hooks for all endpoints (`useTickerData`, `useCalendar`, `useNews`). Skeleto
 | `GET /api/health` | Health check — `{ status, version }` |
 | `GET /api/research/{ticker}` | Aggregated deep-dive: price, sentiment, PEAD signals, articles |
 | `GET /api/research/{ticker}/sentiment-status` | Polling endpoint: `{ ready, article_count, estimated_seconds_remaining }` |
-| `GET /api/calendar?days_ahead=30` | Earnings calendar with pre-computed PEAD signals |
+| `GET /api/calendar?days_ahead=30` | Earnings calendar with PEAD signals (computed on demand, cached 12h) |
 | `GET /api/news?ticker=&sentiment=&source=&limit=20&offset=0` | Paginated sentiment feed |
 | `GET/POST/PATCH /api/tickers` | Tracked ticker management |
 

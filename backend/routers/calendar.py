@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 import db.supabase as db
 from core.auth import get_current_user
 import services.market_service as market_service
+import services.pead_service as pead_service
 import services.sentiment_service as sentiment_service
 from db.models import CalendarEvent, CalendarResponse
 
@@ -36,9 +37,8 @@ def get_calendar(days_ahead: int = Query(default=30, ge=1, le=365)):
     if not earnings_events:
         return CalendarResponse(events=[])
 
-    # Get pre-computed PEAD signals
-    pead_rows = db.get_pead_signals_for_tickers(tickers)
-    pead_map = {row["ticker"]: row for row in pead_rows}
+    # PEAD signals for tickers reporting in the window (cached in memory for 12h)
+    pead_map = pead_service.get_pead_signals(list({ev["ticker"] for ev in earnings_events}))
 
     # Get ticker metadata
     events: list[CalendarEvent] = []
@@ -57,16 +57,13 @@ def get_calendar(days_ahead: int = Query(default=30, ge=1, le=365)):
             log.debug(f"Could not get sentiment for {ticker}: {e}")
 
         # PEAD signal fields
-        pead = pead_map.get(ticker, {})
-        sue = pead.get("sue")
-        outperform_prob = None
-        hist_beat_rate = pead.get("hist_beat_rate")
-        ret_5d_pre = pead.get("ret_5d_pre")
-
-        if pead:
-            best_horizon = pead.get("best_horizon", 5)
-            prob_key = f"outperform_prob_{best_horizon}d"
-            outperform_prob = pead.get(prob_key)
+        pead = pead_map.get(ticker)
+        sue = pead.features.sue if pead else None
+        hist_beat_rate = pead.features.hist_beat_rate if pead else None
+        ret_5d_pre = pead.features.ret_5d_pre if pead else None
+        outperform_prob = (
+            getattr(pead, f"outperform_prob_{pead.best_horizon}d") if pead else None
+        )
 
         events.append(CalendarEvent(
             ticker=ticker,
