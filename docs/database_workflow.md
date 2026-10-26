@@ -22,7 +22,10 @@ All `supabase` commands run from `backend/` and need Docker running.
 ```bash
 git switch main && git pull
 git switch -c <short-description>
+supabase db reset
 ```
+
+Always `supabase db reset` after switching or pulling branches. Your local database keeps whatever the *last* branch's migrations did, while `supabase/migrations/` now holds this branch's files. If they disagree, step 3's diff "undoes" the other branch's changes — for example, after testing a branch that drops a table, a diff on `main` would generate a migration dropping it again.
 
 ### 2. Make the change in local Studio
 
@@ -34,7 +37,7 @@ Open <http://localhost:54323> and use the Table Editor (add a table, a column, a
 supabase db diff --schema public -f <what_changed>
 ```
 
-This compares your local database with what the existing migrations produce and writes the difference to `supabase/migrations/<timestamp>_<what_changed>.sql`.
+This compares your local database with what the existing migrations produce and writes the difference to `supabase/migrations/<timestamp>_<what_changed>.sql`. If the file contains changes you didn't make, your local database is out of sync with this branch: delete the file, `supabase db reset`, redo your change, and diff again.
 
 Always pass `--schema public`. Without it, the diff also picks up harmless differences in Supabase's own setup (for example a `drop extension "pg_net"` line) that do not belong in a migration.
 
@@ -75,6 +78,7 @@ Merging is the moment production changes. The **Database migrations — deploy**
 
 ## Rules
 
+- **Reset after switching branches.** `supabase db reset` whenever you switch or pull, so your local database matches the branch's migrations.
 - **Never edit a migration that has been merged.** Production has already run it; write a new migration instead.
 - **Never change the production schema in the dashboard.** It creates drift the migrations don't know about.
 - **Code before drops.** Once the backend is deployed, code that stops reading a column or table must be live before the migration that drops it. Ship them as two PRs: first the code change, then the drop.
