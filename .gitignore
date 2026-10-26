@@ -29,6 +29,7 @@ Thumbs.db
 .idea/
 *.swp
 
-# ML models (large binaries — download separately)
-models/
+# ML models: FinBERT is downloaded from Hugging Face (see README); the PEAD model is committed
+models/*
+!models/pead_model.joblib
 memory/

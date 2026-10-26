@@ -25,6 +25,16 @@ make install
 
 `make install` creates the backend's Python environment (`backend/.venv`) and installs the frontend's packages.
 
+Then download the FinBERT sentiment model (about 440 MB) into `models/finbert/`:
+
+```bash
+cd backend && uv run hf download ProsusAI/finbert \
+  --include "*.json" --include "*.txt" --include "pytorch_model.bin" \
+  --local-dir ../models/finbert && cd ..
+```
+
+The backend loads it at startup, so it won't start without it. The other model the backend uses, `models/pead_model.joblib` (earnings-drift signals), is already in the repo; `backend/scripts/train_pead_model.py` rebuilds it.
+
 ### 3. Start a local database
 
 With Docker Desktop running:
