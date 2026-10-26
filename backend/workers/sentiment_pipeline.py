@@ -13,6 +13,7 @@ endpoint can stream progress to the frontend in real time.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import logging
@@ -43,7 +44,9 @@ def _run_scraper_pool(
     def _scrape(scraper, keyword, is_ticker):
         try:
             articles = scraper.scrape(keyword, from_, is_ticker=is_ticker)
-            log.info(f"Scraper {scraper.name} ({keyword}) found {len(articles)} articles, queueing...")
+            log.info(
+                f"Scraper {scraper.name} ({keyword}) found {len(articles)} articles, queueing..."
+            )
             for a in articles:
                 article_queue.put(a)
         except Exception as e:
@@ -128,7 +131,8 @@ def _run_finbert_consumer(
     if processed:
         url_to_results: dict[str, list] = {p[0]["url"]: p[1] for p in processed}
         inserted = db.upsert_articles([p[0] for p in processed])
-        log.info(f"Upserted {len(processed)} articles — {len(inserted)} new, {len(processed) - len(inserted)} dupes skipped")
+        dupes = len(processed) - len(inserted)
+        log.info(f"Upserted {len(processed)} articles — {len(inserted)} new, {dupes} dupes skipped")
 
         sentiments = [
             {"article_id": row["id"], "affected": e, "score": s, "confidence": c}

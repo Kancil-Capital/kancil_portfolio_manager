@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
+  Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ResponsiveContainer, Line, ComposedChart,
 } from "recharts";
 import type { ScatterPoint } from "@/lib/types";
@@ -48,9 +48,6 @@ export function LagScatter({ points }: Props) {
     { sentiment: xMin, trend: slope * xMin + intercept },
     { sentiment: xMax, trend: slope * xMax + intercept },
   ];
-
-  const combined = points.map((p) => ({ ...p, trend: null as number | null }))
-    .concat(trendLine.map((t) => ({ sentiment: t.sentiment, next_day_return: null as unknown as number, trend: t.trend })));
 
   return (
     <div className="flex flex-col gap-1">

@@ -6,9 +6,8 @@ Supabase client singleton + typed query helpers for all tables.
 import logging
 from datetime import datetime
 
-from supabase import Client, create_client
-
 from core.config import settings
+from supabase import Client, create_client
 
 log = logging.getLogger(__name__)
 

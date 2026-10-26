@@ -5,7 +5,6 @@ All Pydantic response models for the Kancil Portfolio Manager API.
 
 from pydantic import BaseModel
 
-
 # ── Price ──────────────────────────────────────────────────────────────────────
 
 class OHLCVPoint(BaseModel):

@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import db.supabase as db
-from core.config import settings
 from core import ticker_cache
+from core.config import settings
 from routers import calendar, news, research, tickers
 from workers.scheduler import start_scheduler, stop_scheduler
 
@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────────────
     log.info("Starting Kancil Portfolio Manager API")
 
-    from core.sentiment import get_spacy_nlp, get_sentiment_analyzer, get_phrase_matcher
+    from core.sentiment import get_phrase_matcher, get_sentiment_analyzer, get_spacy_nlp
     from services.pead_service import get_models
     log.info("Loading models...")
     get_models()

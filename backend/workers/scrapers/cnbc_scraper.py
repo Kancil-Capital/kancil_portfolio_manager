@@ -62,7 +62,7 @@ class CNBCScraper(Scraper):
 
         data = soup.find_all("span", {"class": "xyz-data"})
         if data:
-            lines = [l.strip() for l in data[0].get_text().splitlines() if l.strip()]
+            lines = [ln.strip() for ln in data[0].get_text().splitlines() if ln.strip()]
             return " ".join(lines)
 
         return None
@@ -85,7 +85,7 @@ class CNBCScraper(Scraper):
             "extensions": json.dumps({
                 "persistedQuery": {
                     "version": 1,
-                    "sha256Hash": "45e411d8c5c566db6396ca67781b4c0f42a3c594e0e6e87c091333db6a9f5a55",
+                    "sha256Hash": "45e411d8c5c566db6396ca67781b4c0f42a3c594e0e6e87c091333db6a9f5a55",  # noqa: E501
                 }
             }),
         }
@@ -93,7 +93,9 @@ class CNBCScraper(Scraper):
         articles = []
         while True:
             try:
-                resp = requests.get(graphql_url, params=params, headers=self.headers, timeout=(10, 30))
+                resp = requests.get(
+                    graphql_url, params=params, headers=self.headers, timeout=(10, 30)
+                )
                 if not resp.ok:
                     self.error(f"GraphQL {resp.status_code} page {variables['page']}")
                     break
@@ -131,7 +133,9 @@ class CNBCScraper(Scraper):
         while True:
             try:
                 time.sleep(2)
-                resp = requests.get(self.queryly_url, params=params, headers=self.headers, timeout=(10, 30))
+                resp = requests.get(
+                    self.queryly_url, params=params, headers=self.headers, timeout=(10, 30)
+                )
                 if not resp.ok:
                     self.error(f"Queryly {resp.status_code}")
                     break
@@ -175,8 +179,12 @@ class CNBCScraper(Scraper):
     def scrape(self, keyword: str, from_: datetime, **kwargs) -> list[Article]:
         self.keyword = keyword
         is_ticker = kwargs.get("is_ticker", False)
-        self.log(f"Scraping {'ticker' if is_ticker else 'keyword'} '{keyword}' from {from_.strftime('%Y-%m-%d %H:%M UTC')}")
-        raw = self._get_ticker_articles(keyword, from_) if is_ticker else self._get_keyword_articles(keyword, from_)
+        kind = "ticker" if is_ticker else "keyword"
+        self.log(f"Scraping {kind} '{keyword}' from {from_.strftime('%Y-%m-%d %H:%M UTC')}")
+        if is_ticker:
+            raw = self._get_ticker_articles(keyword, from_)
+        else:
+            raw = self._get_keyword_articles(keyword, from_)
         self.log(f"Found {len(raw)} articles, fetching bodies...")
 
         groups = [raw[i: i + 50] for i in range(0, len(raw), 50)]

@@ -94,7 +94,9 @@ def _compute_lag_correlations(
 
 # ── Main service function ──────────────────────────────────────────────────────
 
-def get_sentiment_data(ticker: str, days: int = 180, min_confidence: float | None = None) -> SentimentData | None:
+def get_sentiment_data(
+    ticker: str, days: int = 180, min_confidence: float | None = None
+) -> SentimentData | None:
     """
     Build SentimentData for a ticker.
     Queries sentiments via Supabase RPC, aggregates daily stats, computes analytics.

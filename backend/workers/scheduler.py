@@ -45,6 +45,7 @@ def trigger_ondemand_scrape(ticker: str) -> None:
     Runs in the scheduler's thread pool (non-blocking).
     """
     import threading
+
     from workers.sentiment_pipeline import run_ondemand_ticker_scrape
 
     thread = threading.Thread(

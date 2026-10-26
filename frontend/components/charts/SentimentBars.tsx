@@ -18,7 +18,13 @@ interface Props {
   data: SentimentDay[];
 }
 
-function CustomTooltip({ active, payload, label }: any) {
+interface TooltipProps {
+  active?: boolean;
+  payload?: { payload: SentimentDay }[];
+  label?: string;
+}
+
+function CustomTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload as SentimentDay;
   return (

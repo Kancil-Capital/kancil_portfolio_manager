@@ -22,7 +22,9 @@ def get_news(
     sentiment: str | None = Query(default=None, pattern="^(positive|neutral|negative)$"),
     source: str | None = Query(default=None),
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
-    sort_by: str = Query(default="recent", pattern="^(recent|oldest|impact_desc|impact_asc|positive|negative)$"),
+    sort_by: str = Query(
+        default="recent", pattern="^(recent|oldest|impact_desc|impact_asc|positive|negative)$"
+    ),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):

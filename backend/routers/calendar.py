@@ -8,10 +8,10 @@ import logging
 from fastapi import APIRouter, Depends, Query
 
 import db.supabase as db
-from core.auth import get_current_user
 import services.market_service as market_service
 import services.pead_service as pead_service
 import services.sentiment_service as sentiment_service
+from core.auth import get_current_user
 from db.models import CalendarEvent, CalendarResponse
 
 log = logging.getLogger(__name__)
@@ -74,7 +74,9 @@ def get_calendar(days_ahead: int = Query(default=30, ge=1, le=365)):
             days_to_earnings=ev["days_to_earnings"],
             sentiment_score=round(sentiment_score, 4) if sentiment_score is not None else None,
             sue=round(float(sue), 4) if sue is not None else None,
-            outperform_prob=round(float(outperform_prob), 4) if outperform_prob is not None else None,
+            outperform_prob=(
+                round(float(outperform_prob), 4) if outperform_prob is not None else None
+            ),
             hist_beat_rate=round(float(hist_beat_rate), 4) if hist_beat_rate is not None else None,
             ret_5d_pre=round(float(ret_5d_pre), 4) if ret_5d_pre is not None else None,
         ))

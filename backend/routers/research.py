@@ -11,15 +11,14 @@ import queue as stdlib_queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import jwt as pyjwt
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 import db.supabase as db
-from core import ticker_cache
-from core.auth import get_current_user, verify_token
 import services.market_service as market_service
 import services.pead_service as pead_service
 import services.sentiment_service as sentiment_service
-from fastapi import Query
+from core import ticker_cache
+from core.auth import get_current_user, verify_token
 from db.models import ArticleSummary, SentimentData, SentimentStatus, TickerDeepDive
 from workers.scheduler import trigger_ondemand_scrape
 
@@ -49,7 +48,10 @@ def _get_or_create_ticker(ticker: str, added_by: str | None = None) -> dict:
     region = info.get("financialCurrency") or info.get("region") or ""
     country = info.get("country") or ""
 
-    db.insert_tracked_ticker(ticker=ticker, name=name, sector=sector, region=region, country=country, added_by=added_by)
+    db.insert_tracked_ticker(
+        ticker=ticker, name=name, sector=sector, region=region, country=country,
+        added_by=added_by,
+    )
     ticker_cache.add(ticker)
 
     # Trigger background sentiment scrape (does NOT block this request)
@@ -75,7 +77,8 @@ def get_research(ticker: str, user: dict = Depends(get_current_user)):
     name = tracked.get("name") or ticker
     sector = tracked.get("sector") or ""
     status = tracked.get("status", "tracking")
-    if status == "tracking" and not tracked.get("sentiment_ready") and not tracked.get("last_scraped"):
+    never_scraped = not tracked.get("sentiment_ready") and not tracked.get("last_scraped")
+    if status == "tracking" and never_scraped:
         status = "new"
 
     sentiment_ready = bool(tracked.get("sentiment_ready", False))
@@ -141,7 +144,12 @@ def get_research(ticker: str, user: dict = Depends(get_current_user)):
     )
 
 
-@router.get("/{ticker}/sentiment", response_model=SentimentData, operation_id="getTickerSentiment", dependencies=[Depends(get_current_user)])
+@router.get(
+    "/{ticker}/sentiment",
+    response_model=SentimentData,
+    operation_id="getTickerSentiment",
+    dependencies=[Depends(get_current_user)],
+)
 def get_ticker_sentiment(
     ticker: str,
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
@@ -154,7 +162,12 @@ def get_ticker_sentiment(
     return data
 
 
-@router.get("/{ticker}/sentiment-status", response_model=SentimentStatus, operation_id="getSentimentStatus", dependencies=[Depends(get_current_user)])
+@router.get(
+    "/{ticker}/sentiment-status",
+    response_model=SentimentStatus,
+    operation_id="getSentimentStatus",
+    dependencies=[Depends(get_current_user)],
+)
 def get_sentiment_status(ticker: str):
     ticker = ticker.upper()
     tracked = db.get_tracked_ticker(ticker)

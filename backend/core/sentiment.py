@@ -4,11 +4,11 @@ FinBERT sentiment analysis pipeline.
 Adapted from sentiment-analysis/app/model/main.py — same logic, clean async-compatible I/O.
 """
 
+import logging
 import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-import logging
 
 import spacy
 import torch
@@ -74,7 +74,8 @@ def get_ticker_lookup() -> tuple[dict, dict, set]:
                 continue
     except ImportError:
         warnings.warn(
-            "Optional dependency 'pytickersymbols' not installed; using manual ticker mappings only.",
+            "Optional dependency 'pytickersymbols' not installed; "
+            "using manual ticker mappings only.",
             RuntimeWarning,
         )
 
@@ -443,8 +444,9 @@ def get_sentiment(
 
         sentiment_results = analyzer.analyze_batch(contexts)
         total_weight = sum(relevances)
-        avg_sentiment = sum(s * r for (s, _), r in zip(sentiment_results, relevances)) / total_weight
-        avg_confidence = sum(c * r for (_, c), r in zip(sentiment_results, relevances)) / total_weight
+        weighted = list(zip(sentiment_results, relevances))
+        avg_sentiment = sum(s * r for (s, _), r in weighted) / total_weight
+        avg_confidence = sum(c * r for (_, c), r in weighted) / total_weight
 
         max_relevance = max(relevances)
         final_confidence = avg_confidence * source_weight * max_relevance

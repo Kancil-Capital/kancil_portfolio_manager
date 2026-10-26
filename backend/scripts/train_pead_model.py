@@ -28,17 +28,15 @@ import joblib
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import TimeSeriesSplit
 from xgboost import XGBClassifier
 
-from services.pead_service import FEATURE_NAMES, compute_features
 from services.market_service import (
-    get_raw_price_df_range,
     get_macro_data,
-    get_sector_etf_returns,
-    SECTOR_ETF_MAP,
+    get_raw_price_df_range,
 )
+from services.pead_service import FEATURE_NAMES, compute_features
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

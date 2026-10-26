@@ -77,7 +77,8 @@ def _fetch_from_alpha_vantage(ticker: str) -> list[dict]:
         return []
 
     if "quarterlyEarnings" not in data:
-        log.warning(f"No quarterly earnings in AV response for {ticker}: {data.get('Note', data.get('Information', ''))}")
+        av_message = data.get("Note", data.get("Information", ""))
+        log.warning(f"No quarterly earnings in AV response for {ticker}: {av_message}")
         return []
 
     quarterly = data["quarterlyEarnings"]
@@ -107,11 +108,15 @@ def _fetch_from_alpha_vantage(ticker: str) -> list[dict]:
         records.append({
             "ticker": ticker,
             "fiscal_date": str(row["fiscalDateEnding"].date()),
-            "earnings_date": str(row["reportedDate"].date()) if pd.notna(row["reportedDate"]) else None,
+            "earnings_date": (
+                str(row["reportedDate"].date()) if pd.notna(row["reportedDate"]) else None
+            ),
             "reported_eps": float(row["reportedEPS"]) if pd.notna(row["reportedEPS"]) else None,
             "estimated_eps": float(row["estimatedEPS"]) if pd.notna(row["estimatedEPS"]) else None,
             "eps_surprise": float(row["surprise"]) if pd.notna(row["surprise"]) else None,
-            "eps_surprise_pct": float(row["eps_surprise_pct"]) if pd.notna(row.get("eps_surprise_pct")) else None,
+            "eps_surprise_pct": (
+                float(row["eps_surprise_pct"]) if pd.notna(row.get("eps_surprise_pct")) else None
+            ),
             "sue": float(row["sue"]) if pd.notna(row["sue"]) else None,
             "fetched_at": now_iso,
         })

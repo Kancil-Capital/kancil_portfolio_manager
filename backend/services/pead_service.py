@@ -11,10 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import xgboost  # noqa: F401 — must import before torch to avoid libomp conflict on macOS
 import joblib
 import numpy as np
 import pandas as pd
+import xgboost  # noqa: F401 — must import before torch to avoid libomp conflict on macOS
 import yfinance as yf
 
 import db.supabase as db_module
@@ -73,7 +73,9 @@ def _compute_rsi(close: pd.Series, period: int = 14) -> float:
     return float(100 - (100 / (1 + rs.iloc[-1])))
 
 
-def _compute_rolling_beta(stock_returns: pd.Series, spy_returns: pd.Series, window: int = 60) -> float:
+def _compute_rolling_beta(
+    stock_returns: pd.Series, spy_returns: pd.Series, window: int = 60
+) -> float:
     aligned = pd.concat([stock_returns, spy_returns], axis=1).dropna()
     if len(aligned) < window // 2:
         return 1.0
@@ -191,11 +193,14 @@ def compute_features(
     # ── EPS / SUE features ─────────────────────────────────────────────────────
     if eps_df is not None and not eps_df.empty:
         latest = eps_df.iloc[-1]
-        feats["eps_surprise"] = float(latest["eps_surprise"]) if pd.notna(latest.get("eps_surprise")) else None
+        feats["eps_surprise"] = (
+            float(latest["eps_surprise"]) if pd.notna(latest.get("eps_surprise")) else None
+        )
         feats["sue"] = float(latest["sue"]) if pd.notna(latest.get("sue")) else None
 
         if len(eps_df) >= 2:
-            feats["lagged_surprise"] = float(eps_df.iloc[-2]["sue"]) if pd.notna(eps_df.iloc[-2].get("sue")) else None
+            prev = eps_df.iloc[-2]
+            feats["lagged_surprise"] = float(prev["sue"]) if pd.notna(prev.get("sue")) else None
 
         # Beat rate and streak
         if "reported_eps" in eps_df.columns and "estimated_eps" in eps_df.columns:
@@ -216,8 +221,9 @@ def compute_features(
         latest_macro = macro_df.iloc[-1]
         feats["tnx"] = float(latest_macro["tnx"]) if pd.notna(latest_macro.get("tnx")) else None
         feats["vix"] = float(latest_macro["vix"]) if pd.notna(latest_macro.get("vix")) else None
-        feats["rate_regime"] = int(latest_macro["rate_regime"]) if pd.notna(latest_macro.get("rate_regime")) else None
-        feats["vix_regime"] = int(latest_macro["vix_regime"]) if pd.notna(latest_macro.get("vix_regime")) else None
+        for regime in ("rate_regime", "vix_regime"):
+            value = latest_macro.get(regime)
+            feats[regime] = int(value) if pd.notna(value) else None
 
     # ── Ticker history ─────────────────────────────────────────────────────────
     if eps_df is not None and not eps_df.empty and "earnings_date" in eps_df.columns:
@@ -329,7 +335,6 @@ def _compute_pead_signal(ticker: str) -> PeadSignal | None:
     eps_df = eps_service.get_eps_as_dataframe(ticker)
 
     macro_start = str((datetime.now() - timedelta(days=90)).date())
-    macro_df = market_service.get_raw_price_df_range("^TNX", start=macro_start)
     macro_df_full = market_service.get_macro_data(start=macro_start)
 
     # Get sector for relative strength

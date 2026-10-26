@@ -35,7 +35,9 @@ export function useScrapeStream(
   const [articlesAnalyzed, setArticlesAnalyzed] = useState(0);
   // Keep onDone stable so the effect doesn't re-run when the caller re-renders
   const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -2,7 +2,7 @@
 
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
+  Tooltip, ResponsiveContainer,
 } from "recharts";
 import { formatDateShort } from "@/lib/formatters";
 import type { SentimentDay } from "@/lib/types";
@@ -36,7 +36,7 @@ export function SentimentBreakdown({ daily }: Props) {
             return (
               <div className="rounded border px-2 py-1.5 text-xs" style={{ background: "#374151", borderColor: "#4B5563", color: "#F9FAFB" }}>
                 <div className="mb-1 text-[10px]" style={{ color: "#9CA3AF" }}>{label}</div>
-                {payload.map((p: any) => (
+                {payload.map((p) => (
                   <div key={p.name} style={{ color: p.fill }}>
                     {p.name}: {p.value}
                   </div>

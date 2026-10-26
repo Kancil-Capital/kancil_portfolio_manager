@@ -30,7 +30,8 @@ class Article:
         }
 
     def __repr__(self) -> str:
-        return f"Article(title={self.title!r}, source={self.source}, ts={self.timestamp.isoformat()})"
+        ts = self.timestamp.isoformat()
+        return f"Article(title={self.title!r}, source={self.source}, ts={ts})"
 
 
 class Scraper(ABC):
