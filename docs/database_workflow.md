@@ -13,7 +13,7 @@ All `supabase` commands run from `backend/` and need Docker running.
 1. Install the Supabase CLI (`brew install supabase/tap/supabase`) and Docker Desktop.
 2. `supabase start` — starts a local Supabase on your laptop. First run downloads images and takes a few minutes.
 3. Point the app at it: copy `backend/.env.local.example` to `backend/.env.local` and `frontend/.env.local.example` to `frontend/.env.local`, and fill them in from `supabase status -o env`. Delete or rename the `.env.local` files to go back to production.
-4. Create a login user in local Studio: <http://localhost:54323> → Authentication → Add user.
+4. Log in at <http://localhost:3000/login> as `admin@kancil.test` or `analyst@kancil.test` (password in `supabase/seed.sql`). Both are created by the seed, so they come back after every `supabase db reset`.
 
 ## Making a schema change
 
@@ -54,7 +54,7 @@ Writing the SQL directly with `supabase migration new <name>` is also fine, and 
 supabase db reset
 ```
 
-Rebuilds the local database from every migration plus `seed.sql`. If it fails, the migration would fail in CI too. Note: this also wipes local login users, so re-create yours afterwards.
+Rebuilds the local database from every migration plus `seed.sql`. If it fails, the migration would fail in CI too. It also wipes local data, including any users you made by hand; the seeded test users come back automatically.
 
 Then run the app (`make dev`) against the local database and click through whatever the change affects.
 
