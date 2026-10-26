@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "generate": "orval --config orval.config.ts"
+    "openapi": "cd ../backend && uv run python scripts/export_openapi.py",
+    "generate": "bun run openapi && orval --config orval.config.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",

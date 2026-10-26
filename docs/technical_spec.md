@@ -2,6 +2,13 @@
 
 *Version: 1.0 | Date: 2026-04-02 | Scope: v1 Research Terminal*
 
+> **This is the original pre-build design (April 2026).** The code has moved on since, and where the two disagree the code wins. Current sources of truth:
+> - **Schema:** `backend/supabase/migrations/` (workflow in `docs/database_workflow.md`)
+> - **API:** `frontend/openapi.json`, or `localhost:8000/docs` with the backend running
+> - **Conventions and gotchas:** `CLAUDE.md`
+>
+> Reversed decisions are marked inline with **[Changed]**.
+
 ---
 
 ## 1. Repository Structure
@@ -77,13 +84,13 @@ kancil_portfolio_manager/
 │   │   └── eps_service.py             # EPS/SUE with caching guard
 │   ├── workers/
 │   │   ├── sentiment_pipeline.py      # Adapted from SentimentPulse daily_pipeline
-│   │   ├── pead_refresh.py            # Nightly PEAD signal cache refresh
 │   │   └── scheduler.py              # APScheduler job definitions
 │   ├── db/
 │   │   ├── supabase.py                # Supabase client + typed query helpers
 │   │   └── models.py                  # Pydantic response models
 │   ├── core/
 │   │   └── config.py                  # Settings (env vars via pydantic-settings)
+│   ├── supabase/                      # Supabase CLI: migrations/, seed.sql, config.toml
 │   └── pyproject.toml
 │
 ├── docs/                              # This folder
@@ -101,6 +108,8 @@ kancil_portfolio_manager/
 ---
 
 ## 2. Database Schema
+
+> **[Changed]** The real schema is in `backend/supabase/migrations/`; the sketches below differ from it (e.g. `articles.id` is a `bigint` identity, not a UUID; the SentimentPulse `tickers` table no longer exists).
 
 ### Existing Tables (Supabase — keep as-is)
 
@@ -148,7 +157,8 @@ CREATE TABLE tracked_tickers (
   sentiment_ready BOOLEAN DEFAULT FALSE        -- FALSE while first FinBERT run pending
 );
 
--- Pre-computed PEAD features + model outputs, refreshed nightly
+-- [Changed] Never needed: signals are cheap to compute, so pead_service computes them on demand
+-- and caches them in memory for 12h. The table was dropped in migration 20261026001454.
 CREATE TABLE pead_signals (
   ticker              TEXT,
   computed_at         TIMESTAMPTZ DEFAULT NOW(),
@@ -205,7 +215,7 @@ CREATE TABLE eps_cache (
 
 ```sql
 -- Extend existing get_sentiments() to accept single ticker
--- Add new RPC for calendar view
+-- Add new RPC for calendar view ([Changed] dropped with pead_signals; the calendar computes signals on demand)
 CREATE OR REPLACE FUNCTION get_calendar_signals(tickers TEXT[])
 RETURNS TABLE (...) AS $$ ... $$;
 ```
@@ -401,6 +411,7 @@ from backend.services.market_service import get_price_data, get_macro_data
 
 MODEL = joblib.load("models/pead_model.joblib")  # loaded once at startup
 
+# [Changed] The 12h cache below is an in-memory dict, not a DB table
 async def get_pead_signal(ticker: str) -> PeadSignal | None:
     cached = await db.get_pead_signal(ticker)
     if cached and cached.computed_at > datetime.now() - timedelta(hours=12):
@@ -412,7 +423,7 @@ async def compute_pead_signal(ticker: str) -> PeadSignal:
     # 2. Pull EPS/SUE from eps_cache only — never Alpha Vantage on-demand
     # 3. Compute 28 features
     # 4. Run MODEL.predict_proba() for 5d/10d/20d
-    # 5. Write to pead_signals table
+    # 5. Cache in memory for 12h  ([Changed] originally: write to pead_signals table)
     # 6. Return PeadSignal model
 ```
 
@@ -465,17 +476,9 @@ scheduler.add_job(
 )
 ```
 
-### Nightly PEAD Refresh (`workers/pead_refresh.py`)
+### ~~Nightly PEAD Refresh~~ [Changed]
 
-Recomputes PEAD signals for all tracked tickers. Runs at 02:00 UTC (after US close + after-hours settled).
-
-```python
-scheduler.add_job(
-    func=refresh_pead_signals,
-    trigger="cron", hour=2, minute=0,
-    id="pead_refresh"
-)
-```
+Removed. Signals are computed on request and cached in memory for 12h, so there is nothing to pre-compute.
 
 ### On-Demand Scrape Job (triggered by `POST /api/tickers`)
 
@@ -559,6 +562,8 @@ Use **Supabase Auth** — already have a Supabase instance.
 
 **Implementation:** Next.js middleware checks JWT on every route. FastAPI verifies the same JWT via Supabase's public key.
 
+> **[Changed]** Only `admin` is enforced so far, read from `app_metadata.role` (ticker deletion). FastAPI accepts both HS256 (shared secret) and ES256 (public key via JWKS) tokens. A fuller model with teams, leads and coverage is proposed separately.
+
 ---
 
 ## 8. Key Dependencies
@@ -638,10 +643,12 @@ NEXT_PUBLIC_API_BASE_URL
 
 ## 10. Implementation Phases
 
+> Original plan, kept for reference; checkboxes were not maintained. Progress lives in git history.
+
 ### Phase 0 — Foundation (1 week)
 - [ ] Initialise Next.js app with Tailwind, TypeScript
 - [ ] Initialise FastAPI app with project structure above
-- [ ] Configure Supabase: create new tables (`tracked_tickers`, `pead_signals`, `eps_cache`)
+- [ ] Configure Supabase: create new tables (`tracked_tickers`, ~~`pead_signals`~~, `eps_cache`)
 - [ ] Set up Supabase Auth with roles
 - [ ] Build sidebar + topbar layout components
 - [ ] Wire up Next.js auth middleware
@@ -654,7 +661,7 @@ NEXT_PUBLIC_API_BASE_URL
 - [ ] `eps_service.py` — Alpha Vantage wrapper with cache guard + logging
 - [ ] `pead_service.py` — unified feature computation + XGBoost inference
 - [ ] `workers/sentiment_pipeline.py` — adapt existing daily pipeline to read from `tracked_tickers`
-- [ ] `workers/pead_refresh.py` — nightly PEAD signal refresh
+- [ ] ~~`workers/pead_refresh.py` — nightly PEAD signal refresh~~ (dropped)
 - [ ] All four API routers with response models
 - [ ] On-demand scrape job + `sentiment_ready` flag flow
 
@@ -700,7 +707,7 @@ The existing tools are the reference. This table maps each piece to its fate in 
 | SentimentPulse `app/figures.py` (Plotly charts) | **Retired** | Replaced by React chart components |
 | PEAD `predictor.py` feature engineering | Rewritten | `backend/services/pead_service.py::compute_features()` |
 | PEAD `predictor.py` model training | Rewritten | `backend/scripts/train_pead_model.py` — offline script, outputs `models/pead_model.joblib` |
-| PEAD `predictor.py` main() pipeline runner | **Retired** | Replaced by `pead_refresh.py` worker + on-demand compute |
+| PEAD `predictor.py` main() pipeline runner | **Retired** | Replaced by on-demand compute in `pead_service.py` (12h in-memory cache) |
 | PEAD `predictor.py` backtest / IC / plotting | **Retired** | Research artefacts — not needed at runtime |
 | Earnings Prediction `utils/helpers.py` feature set | Rewritten | Merged into `pead_service.py::compute_features()` — adds macro regime, ticker history features |
 | Earnings Prediction notebooks | **Retired** | Research artefacts — findings inform the feature set, notebooks themselves not ported |

@@ -2,6 +2,8 @@
 
 *Version: 0.3 | Date: 2026-04-02 | Status: Approved for architecture planning*
 
+> Decisions reversed since approval are marked **[Changed]**. For the current implementation see `CLAUDE.md` and the code.
+
 ---
 
 ## 1. Purpose
@@ -136,7 +138,9 @@ Sentiment-tagged news stream across the entire covered universe:
 - Pushes events: `{ stage, article_title, sentiment, articles_done, articles_total }`
 - Pairs naturally with the producer-consumer pipeline refactor — the WebSocket is a third consumer of the queue
 
-#### Ticker Management — Remaining TODOs
+#### Ticker Management — ~~Remaining TODOs~~ Done
+
+All three are implemented: `added_by` comes from the JWT, `/research` lists recently tracked tickers, and `/tickers` enforces ownership on delete.
 
 1. **`added_by` from auth:** When `_get_or_create_ticker` fires on a new ticker, extract the user's email from the JWT (already available via `get_current_user`) and pass it into `insert_tracked_ticker` as `added_by`. Currently always null.
 
@@ -205,11 +209,12 @@ Sentiment-tagged news stream across the entire covered universe:
 **Existing tables** (SentimentPulse, Supabase):
 - `articles` — news articles (keep as-is)
 - `sentiments` — sentiment scores per article+entity (keep as-is)
-- `tickers` — tracked tickers with metadata (extend)
+- `tickers` — tracked tickers with metadata (extend) — **[Changed]** replaced by `tracked_tickers`; the old table no longer exists
 
 **New tables** (v1):
 ```sql
--- Pre-computed PEAD signals, refreshed nightly
+-- [Changed] Not built as stored state: signals are computed on demand and cached in memory
+-- for 12h. The table existed briefly and was dropped.
 pead_signals (
   ticker          TEXT,
   computed_at     TIMESTAMPTZ,
@@ -271,13 +276,13 @@ Paginated sentiment news feed with filters.
 ### PEAD Research → Earnings Signal Panel + Calendar
 - **Keep:** Feature engineering logic, ML models (XGBoost/LightGBM), Alpha Vantage EPS pipeline
 - **Remove:** Static script runner, CSV output, matplotlib plots
-- **Adapt:** Extract feature computation functions into a reusable module; run nightly, cache to `pead_signals` Supabase table
-- **New:** FastAPI route reads from cache and returns pre-computed signals
+- **Adapt:** Extract feature computation functions into a reusable module; ~~run nightly, cache to `pead_signals` Supabase table~~ **[Changed]** compute on request, cache in memory for 12h
+- **New:** FastAPI route returns signals (computed or cached)
 
 ### Earnings Prediction → Merged into PEAD signal
 - **Keep:** Regime analysis (rate_regime, vix_regime, TNX/VIX features), SHAP insights, 28-feature set
 - **Merge:** Combine best features from both PEAD tools into a single unified signal model
-- **New:** Single `pead_signals` table stores outputs from the unified model
+- **New:** Single unified model; outputs served on demand (**[Changed]** no `pead_signals` table)
 
 ---
 
@@ -302,7 +307,7 @@ Different data types have different cost profiles and are handled differently:
 |-----------|----------|-----------|
 | Price data + technicals | Always on-demand (yfinance) | Fast (~200ms), no storage benefit |
 | PEAD features (momentum, vol, volume ratio) | Always on-demand | Pure math on price data, computes in seconds |
-| ML model inference (outperform probability) | On-demand once model is loaded | Fast; FinBERT worker stays resident |
+| ML model inference (outperform probability) | On-demand once model is loaded, cached in memory for 12h | Fast; FinBERT worker stays resident |
 | News articles + FinBERT sentiment | Async on first lookup, stored after | FinBERT is too slow for synchronous requests |
 | EPS / SUE (Alpha Vantage) | Stored, refreshed quarterly | Rate-limited API — never re-fetch until next quarter |
 
@@ -343,7 +348,7 @@ Analysts simply search any ticker — the system handles whether it's already tr
 |---|---------|-------|---------|
 | 1 | How are SMF I positions currently tracked? | Ask CIO | High (v2) |
 | 2 | Where will the platform be deployed? (Vercel + Railway? Self-hosted?) | Team | High (v1) |
-| 3 | Is Alpha Vantage on a paid tier, or do we need an alternative EPS data source? | Team | Medium |
+| 3 | ~~Is Alpha Vantage on a paid tier, or do we need an alternative EPS data source?~~ Free tier: 25 calls/day, 1/second. Handled by the 90-day `eps_cache` plus a request throttle. | Team | Answered |
 | 4 | What's the covered ticker universe for v1? (Kancil holdings + watchlist?) | CIO | Medium |
 | 5 | Should the news scraper run on a cloud scheduler or a local machine? | Team | Medium |
 
