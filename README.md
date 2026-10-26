@@ -70,6 +70,17 @@ Open <http://localhost:3000> and log in as `analyst@kancil.test` or `admin@kanci
 | <http://localhost:8000/docs> | Every API endpoint, live |
 | <http://localhost:54323> | Your local database (Supabase Studio) |
 
+### Optional: link to production
+
+Day-to-day work never needs this: the local database, `make db-reset` and `make db-diff` all run without it, and migrations reach production through CI. Linking only lets you compare your migrations with production's history (`make db-status`). It needs a Supabase account with access to the project.
+
+```bash
+cd backend
+supabase login
+supabase link --project-ref sepdqxndqkimiprsfipb
+cd ..
+```
+
 ## Everyday commands
 
 `make help` lists them all:

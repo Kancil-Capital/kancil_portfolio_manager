@@ -70,10 +70,15 @@ db-new: ## Create an empty migration to write by hand: make db-new name=add_x
 	@test -n "$(name)" || { echo "usage: make db-new name=what_changed"; exit 1; }
 	$(SUPABASE) migration new $(name)
 
-db-status: ## Show whether the app points at local or production, and pending migrations
+db-status: ## Show whether the app points at local or production, and migration history
 	@if [ -f $(BACKEND_DIR)/.env.local ] && grep -q '^SUPABASE_URL=http://127.0.0.1' $(BACKEND_DIR)/.env.local; \
 		then echo "App uses: local Supabase"; else echo "App uses: production Supabase"; fi
-	$(SUPABASE) migration list --linked
+	@if [ -f $(BACKEND_DIR)/supabase/.temp/project-ref ]; then \
+		$(SUPABASE) migration list --linked; \
+	else \
+		echo "Not linked to production (see README), so showing the local database only:"; \
+		$(SUPABASE) migration list --local; \
+	fi
 
 db-env: ## Point the app at local Supabase (writes the .env.local files)
 	cd $(BACKEND_DIR) && uv run python scripts/local_env.py on
