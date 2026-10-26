@@ -9,7 +9,6 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from workers.pead_refresh import refresh_pead_signals
 from workers.sentiment_pipeline import run_daily_sentiment_pipeline
 
 log = logging.getLogger(__name__)
@@ -27,22 +26,11 @@ scheduler.add_job(
     misfire_grace_time=600,  # 10 minutes
 )
 
-# Nightly PEAD refresh — 02:00 UTC (after US close + after-hours settled)
-scheduler.add_job(
-    func=refresh_pead_signals,
-    trigger="cron",
-    hour=2,
-    minute=0,
-    id="pead_refresh",
-    replace_existing=True,
-    misfire_grace_time=600,
-)
-
 
 def start_scheduler() -> None:
     if not scheduler.running:
         scheduler.start()
-        log.info("APScheduler started (daily_sentiment @ 07:00 UTC, pead_refresh @ 02:00 UTC)")
+        log.info("APScheduler started (daily_sentiment @ 07:00 UTC)")
 
 
 def stop_scheduler() -> None:

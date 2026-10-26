@@ -31,3 +31,4 @@ Thumbs.db
 
 # ML models (large binaries — download separately)
 models/
+memory/

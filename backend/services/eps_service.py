@@ -5,6 +5,8 @@ Never re-fetches unless cache is stale. Logs every API call.
 """
 
 import logging
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -19,6 +21,21 @@ log = logging.getLogger(__name__)
 
 CACHE_TTL_DAYS = 90
 AV_BASE_URL = "https://www.alphavantage.co/query"
+
+# Free tier allows 1 request/second; parallel PEAD computes would otherwise burst past it
+AV_MIN_INTERVAL_S = 1.2
+_av_lock = threading.Lock()
+_av_last_call = 0.0
+
+
+def _wait_for_av_slot() -> None:
+    """Block until at least AV_MIN_INTERVAL_S has passed since the last AV call."""
+    global _av_last_call
+    with _av_lock:
+        wait = AV_MIN_INTERVAL_S - (time.monotonic() - _av_last_call)
+        if wait > 0:
+            time.sleep(wait)
+        _av_last_call = time.monotonic()
 
 
 # ── Cache freshness check ──────────────────────────────────────────────────────
@@ -50,6 +67,7 @@ def _fetch_from_alpha_vantage(ticker: str) -> list[dict]:
     log.info(f"[AV API CALL] Fetching earnings for {ticker} — check daily quota")
     url = f"{AV_BASE_URL}?function=EARNINGS&symbol={ticker}&apikey={settings.alpha_vantage_api_key}"
 
+    _wait_for_av_slot()
     try:
         response = httpx.get(url, timeout=30)
         response.raise_for_status()

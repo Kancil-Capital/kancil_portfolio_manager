@@ -6,6 +6,8 @@ Model is loaded once at startup from models/pead_model.joblib.
 """
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -266,20 +268,49 @@ def build_earnings_history(eps_df: pd.DataFrame | None) -> list[EarningsHistoryI
 
 # ── Main service functions ─────────────────────────────────────────────────────
 
+# In-memory signal cache: ticker → (computed_at, signal). None results are cached
+# too, so tickers with no upcoming earnings don't hit yfinance on every request.
+_SIGNAL_TTL = timedelta(hours=12)
+_signal_cache: dict[str, tuple[datetime, PeadSignal | None]] = {}
+_signal_cache_lock = threading.Lock()
+
+
 def get_pead_signal(ticker: str) -> PeadSignal | None:
     """Return cached signal if fresh (< 12h), otherwise recompute."""
-    cached = db_module.get_latest_pead_signal(ticker)
-    if cached:
-        computed_at = datetime.fromisoformat(cached["computed_at"].replace("Z", "+00:00"))
-        age = datetime.now(tz=timezone.utc) - computed_at
-        if age.total_seconds() < 12 * 3600:
-            return _row_to_pead_signal(cached, ticker)
+    with _signal_cache_lock:
+        cached = _signal_cache.get(ticker)
+    if cached and datetime.now(tz=timezone.utc) - cached[0] < _SIGNAL_TTL:
+        return cached[1]
 
     return compute_pead_signal(ticker)
 
 
+def get_pead_signals(tickers: list[str], max_workers: int = 4) -> dict[str, PeadSignal | None]:
+    """Return signals for several tickers, computing uncached ones in parallel."""
+    if not tickers:
+        return {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(_safe_get_pead_signal, tickers)
+    return dict(zip(tickers, results))
+
+
+def _safe_get_pead_signal(ticker: str) -> PeadSignal | None:
+    try:
+        return get_pead_signal(ticker)
+    except Exception as e:
+        log.error(f"PEAD signal failed for {ticker}: {e}")
+        return None
+
+
 def compute_pead_signal(ticker: str) -> PeadSignal | None:
-    """Compute PEAD signal from scratch and persist it."""
+    """Compute PEAD signal from scratch and cache it."""
+    signal = _compute_pead_signal(ticker)
+    with _signal_cache_lock:
+        _signal_cache[ticker] = (datetime.now(tz=timezone.utc), signal)
+    return signal
+
+
+def _compute_pead_signal(ticker: str) -> PeadSignal | None:
     models = get_models()
 
     # Get next earnings date
@@ -331,38 +362,6 @@ def compute_pead_signal(ticker: str) -> PeadSignal | None:
     p20 = probs.get("20d", 0.5)
     best_horizon = max([(p5, 5), (p10, 10), (p20, 20)])[1]
 
-    # ── Persist to pead_signals ────────────────────────────────────────────────
-    signal_row = {
-        "ticker": ticker,
-        "computed_at": datetime.now(tz=timezone.utc).isoformat(),
-        "earnings_date": str(earnings_date),
-        "days_to_earnings": days_to_earnings,
-        "ret_5d_pre": feats.get("ret_5d_pre"),
-        "ret_10d_pre": feats.get("ret_10d_pre"),
-        "ret_20d_pre": feats.get("ret_20d_pre"),
-        "pre_earn_vol_20d": feats.get("pre_earn_vol_20d"),
-        "volume_ratio": feats.get("volume_ratio"),
-        "rolling_beta_60d": feats.get("rolling_beta_60d"),
-        "sector_rs_20d": feats.get("sector_rs_20d"),
-        "eps_surprise": feats.get("eps_surprise"),
-        "sue": feats.get("sue"),
-        "hist_beat_rate": feats.get("hist_beat_rate"),
-        "beat_streak": feats.get("beat_streak"),
-        "lagged_surprise": feats.get("lagged_surprise"),
-        "rate_regime": feats.get("rate_regime"),
-        "vix_regime": feats.get("vix_regime"),
-        "tnx": feats.get("tnx"),
-        "vix": feats.get("vix"),
-        "outperform_prob_5d": p5,
-        "outperform_prob_10d": p10,
-        "outperform_prob_20d": p20,
-        "best_horizon": best_horizon,
-    }
-    try:
-        db_module.upsert_pead_signal(signal_row)
-    except Exception as e:
-        log.error(f"Failed to persist pead_signal for {ticker}: {e}")
-
     earnings_history = build_earnings_history(eps_df)
 
     return PeadSignal(
@@ -386,37 +385,6 @@ def compute_pead_signal(ticker: str) -> PeadSignal | None:
             vix_regime=feats.get("vix_regime"),
             tnx=feats.get("tnx"),
             vix=feats.get("vix"),
-        ),
-        earnings_history=earnings_history,
-    )
-
-
-def _row_to_pead_signal(row: dict, ticker: str) -> PeadSignal:
-    """Convert a pead_signals DB row back to PeadSignal model."""
-    eps_df = eps_service.get_eps_as_dataframe(ticker)
-    earnings_history = build_earnings_history(eps_df)
-
-    return PeadSignal(
-        earnings_date=row.get("earnings_date", ""),
-        days_to_earnings=row.get("days_to_earnings", 0),
-        outperform_prob_5d=row.get("outperform_prob_5d", 0.5),
-        outperform_prob_10d=row.get("outperform_prob_10d", 0.5),
-        outperform_prob_20d=row.get("outperform_prob_20d", 0.5),
-        best_horizon=row.get("best_horizon", 5),
-        features=PeadFeatures(
-            ret_5d_pre=row.get("ret_5d_pre"),
-            ret_10d_pre=row.get("ret_10d_pre"),
-            ret_20d_pre=row.get("ret_20d_pre"),
-            pre_earn_vol_20d=row.get("pre_earn_vol_20d"),
-            volume_ratio=row.get("volume_ratio"),
-            sue=row.get("sue"),
-            eps_surprise=row.get("eps_surprise"),
-            hist_beat_rate=row.get("hist_beat_rate"),
-            beat_streak=row.get("beat_streak"),
-            rate_regime=row.get("rate_regime"),
-            vix_regime=row.get("vix_regime"),
-            tnx=row.get("tnx"),
-            vix=row.get("vix"),
         ),
         earnings_history=earnings_history,
     )
