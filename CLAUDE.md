@@ -56,7 +56,7 @@ make install       # installs deps for both
 cd backend
 supabase start                     # local Postgres + Auth + Studio (http://localhost:54323)
 supabase status -o env             # local URL + keys to put in backend/.env and frontend/.env.local
-supabase db diff -f <name>         # turn local schema changes into supabase/migrations/<ts>_<name>.sql
+supabase db diff --schema public -f <name>   # turn local schema changes into supabase/migrations/<ts>_<name>.sql
 supabase migration new <name>      # or write a migration by hand
 supabase db reset                  # rebuild local DB from all migrations + supabase/seed.sql
 supabase stop
@@ -64,6 +64,9 @@ supabase stop
 
 ### Database workflow
 
+Full step-by-step guide: `docs/database_workflow.md`.
+
+- Preferred way to make a schema change: change the local DB in Studio (http://localhost:54323), then `supabase db diff --schema public -f <name>`, read the generated SQL (renames come out as drop + add — rewrite them as `RENAME`), and verify with `supabase db reset`. Always pass `--schema public`, or the diff includes Supabase-internal noise such as `drop extension "pg_net"`. Hand-written migrations (`supabase migration new`) are for renames, data backfills, and anything the diff gets wrong.
 - Schema lives in `backend/supabase/migrations/` (timestamped `.sql` files); every schema change is a new migration, reviewed in a PR. Never edit a migration that has already been applied, and never change the production schema through the Supabase dashboard.
 - Develop against the local stack (`supabase start`), not production. `supabase/seed.sql` holds small fake data and only runs locally.
 - Env files, same layout in `backend/` and `frontend/`: `.env` holds production/shared values; an optional `.env.local` overrides the Supabase URL and keys to point at the local stack (values from `supabase status -o env`). Delete or rename `.env.local` to go back to production. Local auth uses `localhost:3000` as its redirect URL.
