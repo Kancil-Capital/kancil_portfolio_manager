@@ -53,7 +53,7 @@ cp frontend/.env.example frontend/.env
 make db-env
 ```
 
-- `.env` holds production settings. Ask the tech lead for the real values; at minimum you need `ALPHA_VANTAGE_API_KEY` in `backend/.env`.
+- `.env` holds production settings. For local work the only value you need is `ALPHA_VANTAGE_API_KEY` in `backend/.env`: get your own free key at <https://www.alphavantage.co/support/#api-key>. Don't share keys. The free tier allows 25 calls a day per key, and every `make db-reset` empties your local earnings cache, so a shared key runs out fast. The production Supabase values are only needed for `make use-prod`; ask the tech lead if you need them.
 - `make db-env` writes `.env.local` files that point both apps at your local database instead. Never commit env files, and never paste their contents into an AI chat.
 
 ### 5. Run it
