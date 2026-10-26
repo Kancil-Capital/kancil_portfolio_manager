@@ -4,7 +4,7 @@ Research and portfolio platform for Kancil Capital (student investment fund, Uni
 
 ## Commands
 
-- First-time setup is in `README.md`. Everyday commands are in the root `Makefile` (`make help` lists them): `make dev`, `make install` (after pulling), `make generate`, `make lint`, `make check` (lint + type-check + build), and `make db-*` for the database.
+- First-time setup is in `README.md`. Everyday commands are in the root `Makefile` (`make help` lists them): `make dev`, `make install` (after pulling), `make generate`, `make lint`, `make check` (lint + type-check + build), and `make db-*` for the database. CI (`.github/workflows/checks.yml`) runs the same checks on every PR and fails if `make generate` wasn't run after an API change.
 - Frontend uses `bun`, backend uses `uv`. Never npm/pip.
 - Backend commands run from `backend/`; it is the import root (`from core.config import settings`, not `from backend.core...`).
 

@@ -1,0 +1,76 @@
+name: Checks
+
+# Runs on every PR and on main: lint, type-check and build both apps, and make
+# sure the generated API client matches the backend. Same ground as `make check`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-lint:
+    name: Backend lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.17"
+      # Dev tools only: the full dependency set (torch etc.) isn't needed to lint
+      - run: uv sync --only-group dev --locked
+      - run: uv run --no-sync ruff check .
+
+  frontend:
+    name: Frontend lint, types, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      # Placeholders: the build only needs these to exist
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.17"
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bunx tsc --noEmit
+      - run: bun run build
+
+  api-contract:
+    name: Generated API client up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.17"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.17"
+      - run: uv sync --locked
+        working-directory: backend
+      - run: bun install --frozen-lockfile
+        working-directory: frontend
+      - run: bun run generate
+        working-directory: frontend
+      - name: Fail if generate changed anything
+        run: |
+          if ! git diff --exit-code -- frontend/openapi.json frontend/lib/generated; then
+            echo "::error::The API client is out of date. Run 'make generate' and commit the result."
+            exit 1
+          fi
