@@ -3,21 +3,15 @@ FRONTEND_DIR = frontend
 SUPABASE = cd $(BACKEND_DIR) && supabase
 
 .DEFAULT_GOAL := help
-.PHONY: help setup install install-backend install-frontend dev dev-backend dev-frontend \
+.PHONY: help install install-backend install-frontend dev dev-backend dev-frontend \
 	generate lint check db-start db-stop db-reset db-diff db-new db-status db-env use-prod
 
 help: ## List commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  make %-13s %s\n", $$1, $$2}'
 
-# ── Setup ──────────────────────────────────────────────────────────────────────
+# First-time setup lives in README.md; these targets are for everyday work.
 
-setup: install db-start db-env ## First-time setup: install deps, start local Supabase, point the app at it
-	@test -f $(BACKEND_DIR)/.env || cp $(BACKEND_DIR)/.env.example $(BACKEND_DIR)/.env
-	@test -f $(FRONTEND_DIR)/.env || cp $(FRONTEND_DIR)/.env.example $(FRONTEND_DIR)/.env
-	@echo "Done. Add ALPHA_VANTAGE_API_KEY to backend/.env, then run: make dev"
-	@echo "Log in as analyst@kancil.test or admin@kancil.test (password in backend/supabase/seed.sql)"
-
-install: install-backend install-frontend ## Install backend and frontend dependencies
+install: install-backend install-frontend ## Install/update backend and frontend dependencies (after pulling)
 
 install-backend:
 	cd $(BACKEND_DIR) && uv sync --group dev

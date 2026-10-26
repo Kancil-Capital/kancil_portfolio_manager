@@ -10,10 +10,7 @@ All commands below are `make` targets run from the repo root (`make help` lists 
 
 ## One-time setup
 
-1. Install the Supabase CLI (`brew install supabase/tap/supabase`) and Docker Desktop.
-2. `make setup` installs dependencies, starts a local Supabase on your laptop, and points the app at it. The first run downloads Docker images and takes a few minutes.
-3. Add `ALPHA_VANTAGE_API_KEY` to `backend/.env`, then `make dev`.
-4. Log in at <http://localhost:3000/login> as `admin@kancil.test` or `analyst@kancil.test` (password in `backend/supabase/seed.sql`). Both are created by the seed, so they come back after every `make db-reset`.
+Follow the Setup section of the [README](../README.md): it installs Docker and the Supabase CLI, starts your local database and points the app at it.
 
 `make use-prod` points the app at production data instead, and `make db-env` points it back at local. `make db-status` shows which one is active.
 
@@ -91,7 +88,6 @@ Merging is the moment production changes. The **Database migrations — deploy**
 
 | Command | What it does |
 | --- | --- |
-| `make setup` | First-time setup: install, start local Supabase, point the app at it |
 | `make dev` | Run both apps; starts local Supabase too if the app uses it |
 | `make db-start` / `make db-stop` | Start / stop the local stack (Studio at <http://localhost:54323>) |
 | `make db-diff name=<name>` | Write a migration from your local changes |
