@@ -75,10 +75,8 @@ def delete_ticker(ticker: str, user: dict = Depends(get_current_user)):
 
     user_email = user.get("email")
     is_owner = bool(user_email and user_email == existing.get("added_by"))
-    is_admin = (
-        user.get("app_metadata", {}).get("role") == "admin"
-        or user.get("user_metadata", {}).get("role") == "admin"
-    )
+    # app_metadata is only writable server-side; user_metadata is user-editable
+    is_admin = user.get("app_metadata", {}).get("role") == "admin"
 
     if not is_owner and not is_admin:
         raise HTTPException(
