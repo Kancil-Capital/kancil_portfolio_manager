@@ -25,6 +25,7 @@ dependencies = [
     "transformers>=4.40",
     "torch>=2.0",
     "spacy>=3.7",
+    "en-core-web-lg",  # spaCy model used for entity extraction (core/sentiment.py)
     # Background scheduler
     "apscheduler>=3.10",
     # Scrapers
@@ -35,6 +36,10 @@ dependencies = [
     "lxml>=5.0",
     "pyjwt[crypto]>=2.12.1",
 ]
+
+[tool.uv.sources]
+# spaCy models aren't on PyPI; pin the release wheel matching the spaCy 3.8 line
+en-core-web-lg = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl" }
 
 [dependency-groups]
 dev = [
