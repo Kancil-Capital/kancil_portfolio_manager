@@ -17,6 +17,7 @@ Production-grade financial news sentiment analysis system. Scrapes news, runs Fi
 - **Auth**: Basic HTTP auth (dash-auth)
 
 ### Inputs
+
 | Input | Details |
 |-------|---------|
 | Tickers | ADSK, BABA, C, CBRE, GE, GRAB, META, NVDA (hardcoded, expandable) |
@@ -67,6 +68,7 @@ Quantitative research framework that predicts abnormal stock returns following e
 - **Output**: JSON + static PNG charts
 
 ### Inputs
+
 | Input | Details |
 |-------|---------|
 | Tickers | 98 S&P 500 constituents |
@@ -75,6 +77,7 @@ Quantitative research framework that predicts abnormal stock returns following e
 | Transaction costs | 10 bps round-trip |
 
 ### Features (14 total)
+
 | Category | Features |
 |----------|---------|
 | Momentum | ret_5d/10d/20d pre-earnings |
@@ -113,6 +116,7 @@ Complementary PEAD study that predicts whether a stock will outperform the S&P 5
 - **Data**: yfinance (prices, earnings, macro)
 
 ### Inputs
+
 | Input | Details |
 |-------|---------|
 | Tickers | 69 S&P 500 stocks |
@@ -121,6 +125,7 @@ Complementary PEAD study that predicts whether a stock will outperform the S&P 5
 | Pre-earnings window | 30 trading days |
 
 ### Features (28 total)
+
 | Category | Features |
 |----------|---------|
 | Earnings surprise | SUE, raw surprise %, hist beat rate, beat streak |
@@ -136,6 +141,7 @@ Complementary PEAD study that predicts whether a stock will outperform the S&P 5
 - 14 visualization PNGs (EDA, calibration, SHAP, backtest P&L)
 
 ### Key findings
+
 | Finding | Detail |
 |---------|--------|
 | PEAD signal exists | Top SUE quintile outperforms 54.7% vs 44.0% for bottom — 10.7pp spread |
