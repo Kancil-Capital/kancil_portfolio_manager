@@ -19,6 +19,10 @@ from db.models import EpsRecord
 
 log = logging.getLogger(__name__)
 
+# httpx logs every request URL at INFO, and Alpha Vantage takes the API key as a
+# query parameter, so those lines would contain the key. Only let warnings through.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 CACHE_TTL_DAYS = 90
 AV_BASE_URL = "https://www.alphavantage.co/query"
 
@@ -65,15 +69,19 @@ def _fetch_from_alpha_vantage(ticker: str) -> list[dict]:
         return []
 
     log.info(f"[AV API CALL] Fetching earnings for {ticker} — check daily quota")
-    url = f"{AV_BASE_URL}?function=EARNINGS&symbol={ticker}&apikey={settings.alpha_vantage_api_key}"
+    params = {"function": "EARNINGS", "symbol": ticker, "apikey": settings.alpha_vantage_api_key}
 
     _wait_for_av_slot()
     try:
-        response = httpx.get(url, timeout=30)
+        response = httpx.get(AV_BASE_URL, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
+    except httpx.HTTPStatusError as e:
+        # Never log the exception text: httpx includes the full URL, API key and all
+        log.error(f"Alpha Vantage request failed for {ticker}: HTTP {e.response.status_code}")
+        return []
     except Exception as e:
-        log.error(f"Alpha Vantage request failed for {ticker}: {e}")
+        log.error(f"Alpha Vantage request failed for {ticker}: {type(e).__name__}")
         return []
 
     if "quarterlyEarnings" not in data:
