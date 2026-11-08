@@ -25,12 +25,14 @@ Full guide: `docs/database_workflow.md`. Database `make` targets need Docker.
 - Preferred: change the local DB in Studio (localhost:54323), then `make db-diff name=<name>` (runs `supabase db diff --schema public`; without that flag Supabase-internal noise like `drop extension "pg_net"` appears). Renames come out as drop + add, so rewrite them as `RENAME` by hand.
 - `make db-reset` rebuilds local from migrations + `seed.sql`. Run it to verify a migration, and after every branch switch (otherwise the diff picks up the other branch's changes).
 - **Pushing migrations to `main` deploys them to production** (`.github/workflows/db-deploy.yml`). Drops are irreversible, so flag them before pushing.
-- Local dev: `.env` holds production values; `.env.local` (backend and frontend) overrides the Supabase URL and keys. `make db-env` / `make use-prod` switch between local and production (they only touch the Supabase variables). Seeded logins: `admin@kancil.test`, `analyst@kancil.test` (password in `seed.sql`).
+- Local dev: `.env` holds production values; `.env.local` (backend and frontend) overrides the Supabase URL and keys. `make db-env` / `make use-prod` switch between local and production (they only touch the Supabase variables). Seeded logins (all `@kancil.test`, password in `seed.sql`): `admin@` (CTO), `cio@`, `pm@` (PM of Alpha), `analyst@` (Alpha), `analyst2@` (Beta), `viewer@` (readonly).
 
 ## Gotchas
 
 - Alpha Vantage free tier: 25 calls/day, 1/second. Always go through `eps_service` (90-day `eps_cache` + throttle); never call it on page load.
 - PEAD signals are computed on demand and cached in memory for 12h. There is no table for them.
+- Access control lives in the `authz` schema (not exposed via the API): roles admin/cio/member/readonly, groups with pm/analyst, and a permission matrix stored as data. Change it only through `public.authz_*` functions (service_role). admin/cio can only be granted from a direct DB session (SQL editor/psql). The rules are listed at the top of the authz migration.
+- Every new table needs RLS and explicit grants in the same migration: new objects get no grants to `anon`/`authenticated` by default, and `make db-test` fails on a table without RLS.
 - Auth: the backend accepts Supabase JWTs signed HS256 (shared secret) or ES256 (JWKS). Local Supabase issues ES256.
 
 ## UI conventions
