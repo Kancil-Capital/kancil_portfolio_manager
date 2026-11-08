@@ -52,12 +52,14 @@ def _run_scraper_pool(
         except Exception as e:
             log.error(f"Scraper {scraper.name} ({keyword}) failed: {e}")
 
-    with ThreadPoolExecutor(max_workers=min(len(scrape_tasks), 6)) as pool:
-        futs = [pool.submit(_scrape, s, k, t) for s, k, t in scrape_tasks]
-        for f in as_completed(futs):
-            f.result()  # re-raise unexpected errors so they surface in logs
-
-    article_queue.put(None)  # sentinel — tells the consumer we're done
+    try:
+        with ThreadPoolExecutor(max_workers=min(len(scrape_tasks), 6)) as pool:
+            futs = [pool.submit(_scrape, s, k, t) for s, k, t in scrape_tasks]
+            for f in as_completed(futs):
+                f.result()  # re-raise unexpected errors so they surface in logs
+    finally:
+        # Always tell the consumer we're done, or it waits 120 s for more articles
+        article_queue.put(None)
 
 
 def _run_finbert_consumer(
@@ -158,15 +160,23 @@ def _run_pipeline(
     Returns total articles processed.
     """
     article_queue: queue.Queue[Article | None] = queue.Queue()
+    errors: list[BaseException] = []
+
+    def _capture(fn, *args):
+        # Exceptions in a thread don't reach the caller on their own; collect them
+        try:
+            fn(*args)
+        except BaseException as e:
+            errors.append(e)
 
     producer = threading.Thread(
-        target=_run_scraper_pool,
-        args=(scrape_tasks, article_queue, from_),
+        target=_capture,
+        args=(_run_scraper_pool, scrape_tasks, article_queue, from_),
         daemon=True,
     )
     consumer = threading.Thread(
-        target=_run_finbert_consumer,
-        args=(article_queue, event_queue),
+        target=_capture,
+        args=(_run_finbert_consumer, article_queue, event_queue),
         daemon=True,
     )
 
@@ -174,6 +184,9 @@ def _run_pipeline(
     consumer.start()
     producer.join()
     consumer.join()
+
+    if errors:
+        raise errors[0]
 
     return 0  # count is internal to consumer; callers don't need it
 
@@ -223,17 +236,38 @@ def run_daily_sentiment_pipeline() -> None:
     log.info(f"=== Daily pipeline complete — {len(tickers)} tickers, {len(keywords)} keywords ===")
 
 
-def run_ondemand_ticker_scrape(ticker: str, days_back: int = 30) -> None:
+def run_ondemand_ticker_scrape(
+    ticker: str,
+    days_back: int = 30,
+    event_queue: "queue.Queue | None" = None,
+) -> None:
     """
     On-demand scrape triggered when a new ticker is first visited.
-    Runs in a background thread; registers a ScrapeEvent queue so the WebSocket
-    endpoint can stream progress to the frontend, then sets sentiment_ready=True.
+    Runs in a background thread and streams progress through a ScrapeEvent queue
+    (registered by trigger_ondemand_scrape, or here when run from the CLI), then
+    sets sentiment_ready=True. On failure it sends an "error" event and leaves
+    sentiment_ready false, so the next visit retries.
     """
-    from workers.scrape_stream import register_scrape, unregister_scrape
+    from workers.scrape_stream import ScrapeEvent, try_register_scrape, unregister_scrape
+
+    if event_queue is None:
+        event_queue = try_register_scrape(ticker)
+        if event_queue is None:
+            log.info(f"On-demand scrape already running for {ticker}")
+            return
 
     log.info(f"On-demand scrape started for {ticker}")
-    event_queue = register_scrape(ticker)
+    try:
+        _ondemand_scrape(ticker, days_back, event_queue)
+        log.info(f"On-demand scrape complete for {ticker}")
+    except Exception:
+        log.exception(f"On-demand scrape failed for {ticker}")
+        event_queue.put(ScrapeEvent(stage="error"))
+    finally:
+        unregister_scrape(ticker)
 
+
+def _ondemand_scrape(ticker: str, days_back: int, event_queue: "queue.Queue") -> None:
     from_ = datetime.now(tz=timezone.utc) - timedelta(days=days_back)
 
     scrape_tasks: list[tuple] = []
@@ -258,8 +292,6 @@ def run_ondemand_ticker_scrape(ticker: str, days_back: int = 30) -> None:
         sentiment_ready=True,
         last_scraped=datetime.now(tz=timezone.utc).isoformat(),
     )
-    unregister_scrape(ticker)
-    log.info(f"On-demand scrape complete for {ticker}")
 
 
 if __name__ == "__main__":

@@ -27,12 +27,16 @@ _scrape_queues: dict[str, "queue.Queue[ScrapeEvent]"] = {}
 _lock = threading.Lock()
 
 
-def register_scrape(ticker: str) -> "queue.Queue[ScrapeEvent]":
-    """Create and register a new event queue for ticker. Returns the queue."""
-    q: queue.Queue[ScrapeEvent] = queue.Queue()
+def try_register_scrape(ticker: str) -> "queue.Queue[ScrapeEvent] | None":
+    """Register a new event queue for ticker and return it, or return None if a
+    scrape for ticker is already running. Check and register happen under one lock,
+    so two requests at once can't both start a scrape."""
     with _lock:
+        if ticker in _scrape_queues:
+            return None
+        q: queue.Queue[ScrapeEvent] = queue.Queue()
         _scrape_queues[ticker] = q
-    return q
+        return q
 
 
 def get_scrape_queue(ticker: str) -> "queue.Queue[ScrapeEvent] | None":
