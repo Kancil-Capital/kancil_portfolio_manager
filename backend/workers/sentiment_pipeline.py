@@ -44,6 +44,13 @@ def _run_scraper_pool(
     def _scrape(scraper, keyword, is_ticker):
         try:
             articles = scraper.scrape(keyword, from_, is_ticker=is_ticker)
+            unsafe = [a for a in articles if not a.has_safe_url()]
+            if unsafe:
+                log.warning(
+                    f"Scraper {scraper.name} ({keyword}) dropped {len(unsafe)} articles "
+                    "without an http(s) URL"
+                )
+                articles = [a for a in articles if a.has_safe_url()]
             log.info(
                 f"Scraper {scraper.name} ({keyword}) found {len(articles)} articles, queueing..."
             )
