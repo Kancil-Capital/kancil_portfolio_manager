@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart2, Calendar, Newspaper, List, CircleUser } from "lucide-react";
+import { BarChart2, Calendar, Newspaper, List, CircleUser, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 const navItems = [
@@ -16,10 +16,19 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
   }, []);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await supabase.auth.signOut();
+    // Full page load, not router.replace: it also clears the in-memory SWR cache,
+    // so the next person on a shared computer doesn't see this user's data.
+    window.location.replace("/login");
+  }
 
   return (
     <aside
@@ -89,7 +98,7 @@ export function Sidebar() {
           >
             <CircleUser size={16} style={{ color: "#9ca3af" }} />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium text-white">{email ?? "—"}</p>
             <span
               className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider"
@@ -98,6 +107,17 @@ export function Sidebar() {
               Analyst
             </span>
           </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-label="Sign out"
+            title="Sign out"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded transition-colors hover:bg-[#374151] disabled:opacity-50"
+            style={{ color: "#9ca3af" }}
+          >
+            <LogOut size={15} strokeWidth={1.5} />
+          </button>
         </div>
       </div>
     </aside>
