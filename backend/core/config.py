@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_secret_key: str = ""
     supabase_jwt_secret: str = ""
+    # Accept HS256 (shared secret) tokens. Turn off once the project uses
+    # asymmetric signing keys only; ES256/RS256 are always checked via JWKS.
+    jwt_allow_hs256: bool = True
     alpha_vantage_api_key: str = ""
 
     cors_origins: list[str] = ["http://localhost:3000"]
