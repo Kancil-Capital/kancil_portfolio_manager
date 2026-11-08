@@ -8,6 +8,9 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlsplit
+
+SAFE_URL_SCHEMES = ("http", "https")
 
 
 @dataclass
@@ -28,6 +31,15 @@ class Article:
             "source": self.source,
             "timestamp": self.timestamp.isoformat(),
         }
+
+    def has_safe_url(self) -> bool:
+        """True if the URL is an absolute http(s) link. The frontend renders it as
+        a link, so anything else (javascript:, data:, relative paths) is rejected here."""
+        try:
+            parts = urlsplit(self.url)
+        except ValueError:
+            return False
+        return parts.scheme.lower() in SAFE_URL_SCHEMES and bool(parts.netloc)
 
     def __repr__(self) -> str:
         ts = self.timestamp.isoformat()
