@@ -1,7 +1,8 @@
 name: Checks
 
-# Runs on every PR and on main: lint, type-check and build both apps, and make
-# sure the generated API client matches the backend. Same ground as `make check`.
+# Runs on every PR and on main: lint, test, type-check and build both apps, and make
+# sure the generated API client matches the backend. Same ground as `make check`,
+# plus the database tests (`make db-test`).
 
 on:
   pull_request:
@@ -27,6 +28,39 @@ jobs:
       # Dev tools only: the full dependency set (torch etc.) isn't needed to lint
       - run: uv sync --only-group dev --locked
       - run: uv run --no-sync ruff check .
+
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.17"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      # Full dependency set: tests import the routers and services
+      - run: uv sync --locked
+      # No .env in CI; tests/helpers.py points settings at test values anyway
+      - run: uv run --no-sync pytest
+
+  db-tests:
+    name: Database tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+      # Postgres only (no Studio, Auth etc.), with migrations and seed.sql applied
+      - run: supabase db start
+      - run: supabase test db
 
   frontend:
     name: Frontend lint, types, build
