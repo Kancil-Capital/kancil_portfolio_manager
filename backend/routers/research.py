@@ -36,6 +36,10 @@ def _get_or_create_ticker(ticker: str, added_by: str | None = None) -> dict:
     """
     tracked = db.get_tracked_ticker(ticker)
     if tracked:
+        if not tracked.get("sentiment_ready") and not tracked.get("last_scraped"):
+            # The first scrape failed or was interrupted: try again
+            # (no-op if one is already running)
+            trigger_ondemand_scrape(ticker)
         return tracked
 
     # New ticker — get metadata from yfinance
@@ -277,7 +281,7 @@ async def scrape_stream(websocket: WebSocket, ticker: str, token: str | None = N
                 "articles_total": event.articles_total,
             })
 
-            if event.stage == "done":
+            if event.stage in ("done", "error"):
                 break
 
     except WebSocketDisconnect:

@@ -73,6 +73,9 @@ export function useScrapeStream(
             setArticlesAnalyzed(event.articles_done);
             setIsStreaming(false);
             onDoneRef.current();
+          } else if (event.stage === "error") {
+            // The scrape failed; it will be retried on the next visit
+            setIsStreaming(false);
           }
         } catch {
           // malformed frame — ignore
