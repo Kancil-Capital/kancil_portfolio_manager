@@ -99,4 +99,4 @@ cd ..
 
 - [`docs/database_workflow.md`](docs/database_workflow.md): how to change the database schema
 - [`CLAUDE.md`](CLAUDE.md): conventions and gotchas (also read by AI coding tools)
-- [`docs/`](docs/): original design spec, roadmap and UI design language
+- [`docs/tools_audit.md`](docs/tools_audit.md): the three original tools this platform adapts
