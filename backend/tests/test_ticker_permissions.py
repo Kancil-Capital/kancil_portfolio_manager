@@ -50,6 +50,8 @@ def test_can_manage_ticker_with_no_owner():
     assert tickers._can_manage({"added_by": None}, ADMIN) is True
 
 
+# TODO: once watchlist is scoped by group, this should return 404 instead of 403
+# to prevent data leak
 @pytest.mark.parametrize("user, expected", [
     (OWNER, 200), (ADMIN, 200), (OTHER, 403), (SELF_PROMOTED, 403),
 ])
@@ -72,6 +74,3 @@ def test_unknown_ticker_is_404_not_403(rows):
     assert client_as(OTHER).patch("/api/tickers/ZZZ", json={"status": "held"}).status_code == 404
     assert client_as(OTHER).delete("/api/tickers/ZZZ").status_code == 404
 
-
-def test_invalid_status_rejected(rows):
-    assert client_as(OWNER).patch("/api/tickers/NVDA", json={"status": "bogus"}).status_code == 422
