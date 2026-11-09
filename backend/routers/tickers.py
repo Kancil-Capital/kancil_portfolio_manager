@@ -1,7 +1,7 @@
 """
 routers/tickers.py
 GET    /api/tickers              — list all tracked tickers
-PATCH  /api/tickers/{ticker}     — update status
+PATCH  /api/tickers/{ticker}     — update status (owner or admin only)
 DELETE /api/tickers/{ticker}     — delete (owner or admin only)
 """
 
@@ -28,6 +28,15 @@ class UpdateTickerRequest(BaseModel):
     status: Literal["held", "tracking", "untracked"]
 
 
+def _can_manage(row: dict, user: dict) -> bool:
+    """Owner (the user who added the ticker) or admin. Shared by PATCH and DELETE."""
+    user_email = user.get("email")
+    is_owner = bool(user_email and user_email == row.get("added_by"))
+    # app_metadata is only writable server-side; user_metadata is user-editable
+    is_admin = user.get("app_metadata", {}).get("role") == "admin"
+    return is_owner or is_admin
+
+
 def _row_to_ticker(row: dict) -> TrackedTicker:
     return TrackedTicker(
         ticker=row["ticker"],
@@ -52,12 +61,20 @@ def list_tickers():
 
 
 @router.patch("/{ticker}", response_model=TrackedTicker, operation_id="updateTickerStatus")
-def update_ticker_status(ticker: str, body: UpdateTickerRequest):
+def update_ticker_status(
+    ticker: str, body: UpdateTickerRequest, user: dict = Depends(get_current_user)
+):
     ticker = ticker.upper()
 
     existing = db.get_tracked_ticker(ticker)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not tracked")
+
+    if not _can_manage(existing, user):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only change the status of tickers you added",
+        )
 
     db.update_tracked_ticker(ticker, status=body.status)
 
@@ -73,12 +90,7 @@ def delete_ticker(ticker: str, user: dict = Depends(get_current_user)):
     if not existing:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not tracked")
 
-    user_email = user.get("email")
-    is_owner = bool(user_email and user_email == existing.get("added_by"))
-    # app_metadata is only writable server-side; user_metadata is user-editable
-    is_admin = user.get("app_metadata", {}).get("role") == "admin"
-
-    if not is_owner and not is_admin:
+    if not _can_manage(existing, user):
         raise HTTPException(
             status_code=403,
             detail="You can only delete tickers you added",
