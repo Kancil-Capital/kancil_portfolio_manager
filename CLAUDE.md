@@ -40,4 +40,4 @@ Full guide: `docs/database_workflow.md`. Database `make` targets need Docker.
 
 ## Docs
 
-`docs/tools_audit.md` (the three original tools), `docs/database_workflow.md`. The original architecture spec, roadmap and UI spec were removed in `8cdcae1`; read them with `git show 8cdcae1^:docs/<file>.md`.
+`docs/tools_audit.md` (the three original tools), `docs/database_workflow.md`.
