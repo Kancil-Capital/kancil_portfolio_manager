@@ -12,6 +12,7 @@ Research platform for Kancil Capital: ticker deep-dives (price, news sentiment, 
 | [uv](https://docs.astral.sh/uv/) | Python and backend packages | `brew install uv` |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Runs the local database | Download and open it |
 | [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) | Local database and migrations | `brew install supabase/tap/supabase` |
+| [libomp](https://openmp.llvm.org/) | OpenMP runtime that XGBoost (earnings-drift model) needs; the backend won't start without it | `brew install libomp` |
 
 Use `bun` and `uv` for everything in this repo, never npm or pip, even if an AI suggests it.
 
