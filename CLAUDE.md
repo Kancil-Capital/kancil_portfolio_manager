@@ -36,8 +36,8 @@ Full guide: `docs/database_workflow.md`. Database `make` targets need Docker.
 
 - Skeleton loaders, never spinners.
 - Monospace for all financial figures (prices, returns) to stop column jitter.
-- Dark theme; tokens in `frontend/app/globals.css`, full spec in `docs/ui_design_spec.md`.
+- Dark theme; tokens in `frontend/app/globals.css`.
 
 ## Docs
 
-`docs/technical_spec.md` (original architecture spec), `docs/platform_vision_draft.md` (roadmap, open questions), `docs/ui_design_spec.md`, `docs/tools_audit.md` (the three original tools), `docs/database_workflow.md`.
+`docs/tools_audit.md` (the three original tools), `docs/database_workflow.md`.
