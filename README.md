@@ -91,7 +91,8 @@ cd ..
 | `make dev` | Run both apps (starts local Supabase too, if the app is using it) |
 | `make install` | Update dependencies after pulling |
 | `make generate` | Regenerate frontend API types after backend changes |
-| `make lint` / `make check` | Lint / lint + type-check + build before pushing |
+| `make lint` / `make check` | Lint / lint + backend tests + type-check + build before pushing |
+| `make test` / `make db-test` | Backend tests (pytest) / database tests (pgTAP; needs local Supabase running) |
 | `make db-reset` | Rebuild the local database (after switching branches) |
 | `make db-diff name=…` | Turn local schema changes into a migration |
 | `make db-env` / `make use-prod` | Use the local / production database |

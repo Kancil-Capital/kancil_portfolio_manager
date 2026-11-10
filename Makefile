@@ -4,7 +4,7 @@ SUPABASE = cd $(BACKEND_DIR) && supabase
 
 .DEFAULT_GOAL := help
 .PHONY: help install install-backend install-frontend dev dev-backend dev-frontend \
-	generate lint check db-start db-stop db-reset db-diff db-new db-status db-env use-prod
+	generate lint test check db-start db-stop db-reset db-diff db-new db-status db-test db-env use-prod
 
 help: ## List commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  make %-13s %s\n", $$1, $$2}'
@@ -42,7 +42,10 @@ lint: ## Lint backend (ruff) and frontend (eslint)
 	cd $(BACKEND_DIR) && uv run ruff check .
 	cd $(FRONTEND_DIR) && bun run lint
 
-check: lint ## Lint + type-check + production build, before pushing
+test: ## Run backend tests (pytest)
+	cd $(BACKEND_DIR) && uv run pytest
+
+check: lint test ## Lint + backend tests + type-check + production build, before pushing
 	cd $(FRONTEND_DIR) && bunx tsc --noEmit && bun run build
 
 # ── Database (local Supabase; needs Docker) ───────────────────────────────────
@@ -65,6 +68,9 @@ db-diff: ## Write a migration from your local Studio changes: make db-diff name=
 		echo "Created $$(ls -t $(BACKEND_DIR)/supabase/migrations/*.sql | head -1)"; \
 		echo "Read it (renames show up as drop + add, rewrite them as RENAME), then: make db-reset"; \
 	else echo "No changes found: nothing was created."; fi
+
+db-test: ## Run database tests (pgTAP, backend/supabase/tests/) against local Supabase
+	$(SUPABASE) test db
 
 db-new: ## Create an empty migration to write by hand: make db-new name=add_x
 	@test -n "$(name)" || { echo "usage: make db-new name=what_changed"; exit 1; }
