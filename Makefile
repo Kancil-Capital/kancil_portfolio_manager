@@ -4,7 +4,7 @@ SUPABASE = cd $(BACKEND_DIR) && supabase
 
 .DEFAULT_GOAL := help
 .PHONY: help install install-backend install-frontend dev dev-backend dev-frontend \
-	generate lint check db-start db-stop db-reset db-diff db-new db-status db-env use-prod
+	generate lint test check db-start db-stop db-reset db-diff db-new db-status db-env use-prod
 
 help: ## List commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  make %-13s %s\n", $$1, $$2}'
@@ -41,6 +41,9 @@ generate: ## Regenerate frontend API types/hooks from the backend (no server nee
 lint: ## Lint backend (ruff) and frontend (eslint)
 	cd $(BACKEND_DIR) && uv run ruff check .
 	cd $(FRONTEND_DIR) && bun run lint
+
+test: ## Run backend tests (pytest)
+	cd $(BACKEND_DIR) && uv run pytest
 
 check: lint ## Lint + type-check + production build, before pushing
 	cd $(FRONTEND_DIR) && bunx tsc --noEmit && bun run build
