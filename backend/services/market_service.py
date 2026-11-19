@@ -6,6 +6,7 @@ No caching needed — yfinance is fast and free.
 
 import logging
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -71,6 +72,26 @@ def get_raw_price_df_range(ticker: str, start: str, end: str | None = None) -> p
     except Exception as e:
         log.error(f"Failed to download price data for {ticker} ({start}→{end}): {e}")
         return None
+
+
+_exchange_tz_cache: dict[str, str] = {}
+
+
+def get_exchange_timezone(ticker: str) -> str:
+    """
+    IANA timezone of the ticker's exchange (e.g. "Europe/London"), from yfinance.
+    Falls back to "UTC" (logged, and retried on the next call) when it is unknown.
+    """
+    if ticker in _exchange_tz_cache:
+        return _exchange_tz_cache[ticker]
+    try:
+        tz = yf.Ticker(ticker).fast_info["timezone"]
+        ZoneInfo(tz)  # raises if missing or not a real zone
+    except Exception as e:
+        log.warning(f"No exchange timezone for {ticker}, using UTC: {e!r}")
+        return "UTC"
+    _exchange_tz_cache[ticker] = tz
+    return tz
 
 
 # ── Technicals ─────────────────────────────────────────────────────────────────

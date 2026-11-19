@@ -9,7 +9,6 @@ import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
 import pandas as pd
 
 import db.supabase as db
@@ -22,8 +21,12 @@ from db.models import (
     SentimentData,
     SentimentStats,
 )
+from services.stats_utils import align_to_trading_days, bonferroni, corr_with_significance
 
 log = logging.getLogger(__name__)
+
+MIN_LAG_PAIRS = 10          # lags with fewer (sentiment, return) pairs are not reported
+SIGNIFICANCE_LEVEL = 0.05   # on the Bonferroni-adjusted p-value
 
 STOPWORDS = {
     "the", "a", "an", "in", "on", "at", "for", "to", "of", "and", "or", "but",
@@ -52,11 +55,14 @@ def _extract_keywords(titles: list[str], top_n: int = 30) -> list[KeywordCount]:
 # ── Lag correlation ────────────────────────────────────────────────────────────
 
 def _compute_lag_correlations(
-    daily_sentiment: pd.Series,
+    articles: pd.DataFrame,
     ticker: str,
     max_lag: int = 8,
 ) -> tuple[list[LagCorrelation], list[ScatterPoint]]:
-    """Correlate daily sentiment[t] with price return[t+lag].
+    """Correlate daily sentiment[t] with price return[t+lag], lag in trading days.
+    articles has one row per article (timestamp, sentiment); they are dated in the
+    exchange's timezone and put on the price calendar. p-values are
+    Bonferroni-adjusted for the max_lag lags tested.
     Returns (correlations, scatter_points) where scatter_points are 1d lag pairs."""
     try:
         price_df = market_service.get_raw_price_df(ticker, period="1y")
@@ -66,19 +72,25 @@ def _compute_lag_correlations(
         price_returns = price_df["close"].pct_change().rename("ret")
         price_returns.index = price_returns.index.normalize()
 
-        sent = daily_sentiment.copy()
-        sent.index = pd.to_datetime(sent.index).tz_localize(None).normalize()
+        tz = market_service.get_exchange_timezone(ticker)
+        sent = align_to_trading_days(articles, price_returns.index, tz=tz)
 
         correlations = []
         scatter_points: list[ScatterPoint] = []
         for lag in range(1, max_lag + 1):
             shifted = sent.shift(lag)
             merged = pd.concat([shifted, price_returns], axis=1).dropna()
-            if len(merged) < 10:
+            if len(merged) < MIN_LAG_PAIRS:
                 continue
-            corr = merged.iloc[:, 0].corr(merged.iloc[:, 1])
-            if not np.isnan(corr):
-                correlations.append(LagCorrelation(lag=lag, correlation=round(float(corr), 4)))
+            result = corr_with_significance(merged.iloc[:, 0], merged.iloc[:, 1])
+            if result is not None:
+                corr, p, n = result
+                correlations.append(LagCorrelation(
+                    lag=lag,
+                    correlation=round(corr, 4),
+                    n=n,
+                    p_value=round(bonferroni(p, max_lag), 6),
+                ))
             if lag == 1:
                 for _, row in merged.iterrows():
                     scatter_points.append(ScatterPoint(
@@ -165,8 +177,9 @@ def get_sentiment_data(
     daily_records.sort(key=lambda x: x.date)
 
     # ── Lag correlations ───────────────────────────────────────────────────────
-    daily_mean = ticker_df.groupby("date")["sentiment"].mean()
-    lag_correlations, scatter_points = _compute_lag_correlations(daily_mean, ticker)
+    lag_correlations, scatter_points = _compute_lag_correlations(
+        ticker_df[["timestamp", "sentiment"]], ticker
+    )
 
     # ── Stats ──────────────────────────────────────────────────────────────────
     cutoff_30d = end_date - timedelta(days=30)
@@ -182,10 +195,11 @@ def get_sentiment_data(
     net_sentiment = float(all_scores.mean())
     sentiment_ratio = positive_count / total if total > 0 else 0.5
 
-    best_lag = 0
-    best_lag_corr = 0.0
-    if lag_correlations:
-        best = max(lag_correlations, key=lambda x: abs(x.correlation))
+    best_lag = None
+    best_lag_corr = None
+    significant = [c for c in lag_correlations if c.p_value < SIGNIFICANCE_LEVEL]
+    if significant:
+        best = max(significant, key=lambda x: abs(x.correlation))
         best_lag = best.lag
         best_lag_corr = best.correlation
 
@@ -199,7 +213,7 @@ def get_sentiment_data(
         negative_count=negative_count,
         sentiment_ratio=round(sentiment_ratio, 4),
         best_lag=best_lag,
-        best_lag_correlation=round(best_lag_corr, 4),
+        best_lag_correlation=best_lag_corr,
     )
 
     # ── Keywords ───────────────────────────────────────────────────────────────
