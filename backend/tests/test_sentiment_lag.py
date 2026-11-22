@@ -259,39 +259,41 @@ def test_price_download_records_the_exchange_timezone(fake_yf, download):
     history(tz="UTC").iloc[:0],          # unknown symbol: empty history
     RuntimeError("rate limited"),
 ])
-def test_exchange_timezone_falls_back_to_utc(fake_yf, caplog, frame):
+def test_download_without_a_timezone_falls_back_to_utc(fake_yf, caplog, frame):
     fake_yf(frame)
+    market_service.get_raw_price_df("TEST")
     assert market_service.get_exchange_timezone("TEST") == "UTC"
     assert "using UTC" in caplog.text
     tz, _expires_at = market_service._exchange_tz_cache["TEST"]
     assert tz == "UTC"
 
 
-def test_unknown_ticker_is_looked_up_once_per_ttl(fake_yf, caplog, monkeypatch):
-    calls = fake_yf(history(tz="UTC").iloc[:0])
+def test_unknown_ticker_makes_no_request_and_warns_once_per_ttl(fake_yf, caplog, monkeypatch):
+    calls = fake_yf(history(tz="Europe/London"))
     now = [1000.0]
     monkeypatch.setattr(market_service.time, "monotonic", lambda: now[0])
 
     for _ in range(5):
         assert market_service.get_exchange_timezone("NOPE") == "UTC"
-    assert len(calls) == 1
     assert caplog.text.count("using UTC") == 1
 
     now[0] += market_service._TZ_RETRY_SECONDS - 1  # still inside the TTL
     market_service.get_exchange_timezone("NOPE")
-    assert len(calls) == 1
+    assert caplog.text.count("using UTC") == 1
 
-    now[0] += 2  # expired: one new lookup, one new warning
+    now[0] += 2  # expired: one new warning
     for _ in range(3):
         market_service.get_exchange_timezone("NOPE")
-    assert len(calls) == 2
     assert caplog.text.count("using UTC") == 2
+    assert calls == []  # the lookup never touches yfinance
 
 
-def test_later_successful_download_replaces_the_utc_fallback(fake_yf):
-    fake_yf(history(tz="UTC").iloc[:0])
+def test_failed_download_gives_utc_then_a_later_download_gives_the_real_tz(fake_yf):
+    fake_yf(RuntimeError("rate limited"))
+    assert market_service.get_raw_price_df("TEST") is None
     assert market_service.get_exchange_timezone("TEST") == "UTC"
 
     fake_yf(history(tz="Asia/Tokyo"))
-    market_service.get_raw_price_df("TEST")
+    assert market_service.get_raw_price_df("TEST") is not None
+    # well inside the hour-long UTC entry, the successful download still wins
     assert market_service.get_exchange_timezone("TEST") == "Asia/Tokyo"

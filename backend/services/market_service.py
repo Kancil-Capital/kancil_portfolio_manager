@@ -38,10 +38,10 @@ SECTOR_ETF_MAP = {
 
 # ── Exchange timezone ──────────────────────────────────────────────────────────
 
-_TZ_RETRY_SECONDS = 3600  # an unknown timezone is looked up again after this long
+_TZ_RETRY_SECONDS = 3600  # a missing timezone is warned about again after this long
 
 # ticker -> IANA timezone, recorded from the history index by every price download.
-# A failed lookup is stored as ("UTC", expires_at) so it is retried at most hourly.
+# A miss is stored as ("UTC", expires_at) so its warning is logged at most hourly.
 _exchange_tz_cache: dict[str, str | tuple[str, float]] = {}
 
 
@@ -60,22 +60,18 @@ def _remember_exchange_tz(ticker: str, index: pd.Index) -> None:
 
 def get_exchange_timezone(ticker: str) -> str:
     """
-    IANA timezone of the ticker's exchange (e.g. "Europe/London"). Price downloads
-    record it, so after get_raw_price_df this makes no network call; otherwise it
-    downloads a few days of history to find out. Falls back to "UTC" when it is
-    unknown: logged once, then cached for _TZ_RETRY_SECONDS before trying again.
+    IANA timezone of the ticker's exchange (e.g. "Europe/London"). Makes no network
+    call: the tz is filled in by get_raw_price_df / get_raw_price_df_range from the
+    history index. Callers must download prices for the ticker first; without a prior
+    successful download this returns "UTC". A miss logs a warning once per
+    _TZ_RETRY_SECONDS; a later successful download replaces the UTC entry at once.
     """
     cached = _exchange_tz_cache.get(ticker)
     if isinstance(cached, str):
         return cached
     if cached is not None and time.monotonic() < cached[1]:
         return cached[0]
-
-    get_raw_price_df(ticker, period="5d")  # records the timezone on success
-    cached = _exchange_tz_cache.get(ticker)
-    if isinstance(cached, str):
-        return cached
-    log.warning(f"No exchange timezone for {ticker}, using UTC for the next hour")
+    log.warning(f"No exchange timezone for {ticker} (no successful price download), using UTC")
     _exchange_tz_cache[ticker] = ("UTC", time.monotonic() + _TZ_RETRY_SECONDS)
     return "UTC"
 
