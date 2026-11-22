@@ -5,6 +5,7 @@ No caching needed — yfinance is fast and free.
 """
 
 import logging
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -35,15 +36,61 @@ SECTOR_ETF_MAP = {
 }
 
 
+# ── Exchange timezone ──────────────────────────────────────────────────────────
+
+_TZ_RETRY_SECONDS = 3600  # an unknown timezone is looked up again after this long
+
+# ticker -> IANA timezone, recorded from the history index by every price download.
+# A failed lookup is stored as ("UTC", expires_at) so it is retried at most hourly.
+_exchange_tz_cache: dict[str, str | tuple[str, float]] = {}
+
+
+def _remember_exchange_tz(ticker: str, index: pd.Index) -> None:
+    """Cache the exchange timezone yfinance puts on a history index, if it is a real zone.
+    An empty history (e.g. unknown symbol) says nothing about the exchange."""
+    tz = getattr(index, "tz", None)
+    if tz is None or len(index) == 0:
+        return
+    try:
+        ZoneInfo(str(tz))
+    except Exception:
+        return
+    _exchange_tz_cache[ticker] = str(tz)
+
+
+def get_exchange_timezone(ticker: str) -> str:
+    """
+    IANA timezone of the ticker's exchange (e.g. "Europe/London"). Price downloads
+    record it, so after get_raw_price_df this makes no network call; otherwise it
+    downloads a few days of history to find out. Falls back to "UTC" when it is
+    unknown: logged once, then cached for _TZ_RETRY_SECONDS before trying again.
+    """
+    cached = _exchange_tz_cache.get(ticker)
+    if isinstance(cached, str):
+        return cached
+    if cached is not None and time.monotonic() < cached[1]:
+        return cached[0]
+
+    get_raw_price_df(ticker, period="5d")  # records the timezone on success
+    cached = _exchange_tz_cache.get(ticker)
+    if isinstance(cached, str):
+        return cached
+    log.warning(f"No exchange timezone for {ticker}, using UTC for the next hour")
+    _exchange_tz_cache[ticker] = ("UTC", time.monotonic() + _TZ_RETRY_SECONDS)
+    return "UTC"
+
+
 # ── Raw price download ─────────────────────────────────────────────────────────
 
 def get_raw_price_df(ticker: str, period: str = "6mo") -> pd.DataFrame | None:
     """
-    Download OHLCV DataFrame from yfinance.
+    Download OHLCV DataFrame from yfinance (index tz-naive, in exchange time).
+    Records the exchange timezone for get_exchange_timezone.
     Returns None on failure or insufficient data.
     """
     try:
         df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+        _remember_exchange_tz(ticker, df.index)
         if df.empty or len(df) < 5:
             return None
         df.index = pd.to_datetime(df.index)
@@ -61,6 +108,7 @@ def get_raw_price_df_range(ticker: str, start: str, end: str | None = None) -> p
     try:
         t = yf.Ticker(ticker)
         df = t.history(start=start, end=end, auto_adjust=True)
+        _remember_exchange_tz(ticker, df.index)
         if df.empty:
             return None
         df.index = pd.to_datetime(df.index)
@@ -72,26 +120,6 @@ def get_raw_price_df_range(ticker: str, start: str, end: str | None = None) -> p
     except Exception as e:
         log.error(f"Failed to download price data for {ticker} ({start}→{end}): {e}")
         return None
-
-
-_exchange_tz_cache: dict[str, str] = {}
-
-
-def get_exchange_timezone(ticker: str) -> str:
-    """
-    IANA timezone of the ticker's exchange (e.g. "Europe/London"), from yfinance.
-    Falls back to "UTC" (logged, and retried on the next call) when it is unknown.
-    """
-    if ticker in _exchange_tz_cache:
-        return _exchange_tz_cache[ticker]
-    try:
-        tz = yf.Ticker(ticker).fast_info["timezone"]
-        ZoneInfo(tz)  # raises if missing or not a real zone
-    except Exception as e:
-        log.warning(f"No exchange timezone for {ticker}, using UTC: {e!r}")
-        return "UTC"
-    _exchange_tz_cache[ticker] = tz
-    return tz
 
 
 # ── Technicals ─────────────────────────────────────────────────────────────────

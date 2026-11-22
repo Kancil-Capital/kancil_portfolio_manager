@@ -207,25 +207,90 @@ def test_best_lag_is_none_when_no_lag_is_significant(fake_market, fake_db):
 
 # ── exchange timezone lookup ───────────────────────────────────────────────────
 
-class FakeTicker:
-    fast_info: dict = {}
+def history(tz=None, rows=10):
+    """A yfinance-style history frame; tz is put on the index as yfinance does."""
+    index = pd.date_range("2026-01-05", periods=rows, freq="B", tz=tz)
+    return pd.DataFrame({c: 1.0 for c in ["Open", "High", "Low", "Close", "Volume"]},
+                        index=index)
 
-    def __init__(self, symbol):
-        pass
 
-
-@pytest.mark.parametrize("fast_info, expected", [
-    ({"timezone": "Europe/London"}, "Europe/London"),
-    ({"timezone": "Not/AZone"}, "UTC"),
-    ({"timezone": None}, "UTC"),
-    ({}, "UTC"),
-])
-def test_exchange_timezone_falls_back_to_utc(monkeypatch, caplog, fast_info, expected):
+@pytest.fixture
+def fake_yf(monkeypatch):
+    """Replace yf.Ticker; history() returns the frame given (or raises it). Counts calls."""
     monkeypatch.setattr(market_service, "_exchange_tz_cache", {})
-    monkeypatch.setattr(FakeTicker, "fast_info", fast_info)
-    monkeypatch.setattr(market_service.yf, "Ticker", FakeTicker)
+    calls = []
 
-    assert market_service.get_exchange_timezone("TEST") == expected
-    assert ("using UTC" in caplog.text) is (expected == "UTC")
-    # only a real answer is cached, so a failed lookup is retried
-    assert market_service._exchange_tz_cache == ({} if expected == "UTC" else {"TEST": expected})
+    def install(frame):
+        class FakeTicker:
+            def __init__(self, symbol):
+                pass
+
+            def history(self, **kwargs):
+                calls.append(kwargs)
+                if isinstance(frame, Exception):
+                    raise frame
+                return frame
+
+        monkeypatch.setattr(market_service.yf, "Ticker", FakeTicker)
+        return calls
+    return install
+
+
+@pytest.mark.parametrize("download", [
+    lambda: market_service.get_raw_price_df("TEST", period="1y"),
+    lambda: market_service.get_raw_price_df_range("TEST", start="2026-01-01"),
+])
+def test_price_download_records_the_exchange_timezone(fake_yf, download):
+    calls = fake_yf(history(tz="America/New_York"))
+
+    df = download()
+
+    # the returned frame is unchanged: tz-naive index
+    assert df.index.tz is None and list(df.columns) == ["open", "high", "low", "close", "volume"]
+    # the timezone comes from that download: no second request
+    assert market_service.get_exchange_timezone("TEST") == "America/New_York"
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("frame", [
+    history(tz=None),                    # no tz on the index
+    history(tz="UTC").tz_convert(None),  # tz stripped
+    history(tz="UTC").iloc[:0],          # unknown symbol: empty history
+    RuntimeError("rate limited"),
+])
+def test_exchange_timezone_falls_back_to_utc(fake_yf, caplog, frame):
+    fake_yf(frame)
+    assert market_service.get_exchange_timezone("TEST") == "UTC"
+    assert "using UTC" in caplog.text
+    tz, _expires_at = market_service._exchange_tz_cache["TEST"]
+    assert tz == "UTC"
+
+
+def test_unknown_ticker_is_looked_up_once_per_ttl(fake_yf, caplog, monkeypatch):
+    calls = fake_yf(history(tz="UTC").iloc[:0])
+    now = [1000.0]
+    monkeypatch.setattr(market_service.time, "monotonic", lambda: now[0])
+
+    for _ in range(5):
+        assert market_service.get_exchange_timezone("NOPE") == "UTC"
+    assert len(calls) == 1
+    assert caplog.text.count("using UTC") == 1
+
+    now[0] += market_service._TZ_RETRY_SECONDS - 1  # still inside the TTL
+    market_service.get_exchange_timezone("NOPE")
+    assert len(calls) == 1
+
+    now[0] += 2  # expired: one new lookup, one new warning
+    for _ in range(3):
+        market_service.get_exchange_timezone("NOPE")
+    assert len(calls) == 2
+    assert caplog.text.count("using UTC") == 2
+
+
+def test_later_successful_download_replaces_the_utc_fallback(fake_yf):
+    fake_yf(history(tz="UTC").iloc[:0])
+    assert market_service.get_exchange_timezone("TEST") == "UTC"
+
+    fake_yf(history(tz="Asia/Tokyo"))
+    market_service.get_raw_price_df("TEST")
+    assert market_service.get_exchange_timezone("TEST") == "Asia/Tokyo"

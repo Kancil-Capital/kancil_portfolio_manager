@@ -157,8 +157,9 @@ def get_sentiment_data(
         if ticker_df.empty:
             return None
 
-    # Each article is dated once, in the exchange's timezone, for both the daily
-    # records and the lag correlation.
+    # Prices first: the download also records the exchange timezone, so the lookup
+    # after it is free. Each article is dated once in that timezone, for both the
+    # daily records and the lag correlation.
     price_df = market_service.get_raw_price_df(ticker, period="1y")
     tz = market_service.get_exchange_timezone(ticker)
     ticker_df = ticker_df.assign(date=exchange_dates(ticker_df["timestamp"], tz))
