@@ -1,14 +1,17 @@
 "use client";
 
 import { Info } from "lucide-react";
-import type { LagCorrelation } from "@/lib/types";
+import { formatDate } from "@/lib/formatters";
+import type { LagCorrelation, SentimentDay } from "@/lib/types";
 
 interface Props {
   correlations: LagCorrelation[];
+  // stats.best_lag from the API: the backend decides significance and the best lag
+  bestLag: number | null;
+  // daily sentiment records (sorted by date); their range is the news behind the correlations
+  daily: SentimentDay[];
 }
 
-// Matches SIGNIFICANCE_LEVEL in backend/services/sentiment_service.py (on the adjusted p)
-const SIGNIFICANCE = 0.05;
 // Below this many paired days the analyst guidance says to treat r as weak
 const WEAK_N = 30;
 
@@ -42,19 +45,28 @@ function formatP(p: number, spaced = false): string {
   return spaced ? `p ${op} ${value}` : `p${op}${value}`;
 }
 
-const isSignificant = (c: LagCorrelation) => c.p_value < SIGNIFICANCE;
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
 
 function cellTooltip(c: LagCorrelation): string {
   const lines = [
     `Sentiment ${c.lag} trading day${c.lag === 1 ? "" : "s"} ago vs return today`,
     `r = ${formatR(c.correlation, 3)}`,
     `n = ${c.n}${c.n < WEAK_N ? " (under 30: treat as weak)" : ""}`,
-    `${formatP(c.p_value, true)} (adjusted): ${isSignificant(c) ? "significant" : "not significant"}`,
+    `${formatP(c.p_value, true)} (adjusted): ${c.significant ? "significant" : "not significant"}`,
   ];
   return lines.join("\n");
 }
 
-function HowToRead() {
+interface HowToReadProps {
+  lagsTested: number;
+  maxLag: number;
+  newsFrom: string | null;
+  newsTo: string | null;
+}
+
+function HowToRead({ lagsTested, maxLag, newsFrom, newsTo }: HowToReadProps) {
   return (
     <details className="group text-xs" style={{ color: "#9CA3AF" }}>
       <summary
@@ -80,19 +92,26 @@ function HowToRead() {
         </p>
         <p>
           <span className="font-mono" style={{ color: "#F9FAFB" }}>p</span> (adjusted): how likely a
-          result this strong is by pure chance, adjusted because 8 lags are tested. Below 0.05
-          counts as significant. Greyed-out cells aren’t significant.
+          result this strong is by pure chance, adjusted because {plural(lagsTested, "lag")}{" "}
+          {lagsTested === 1 ? "was" : "were"} tested. Lags with too few days of data aren’t shown or
+          counted. Greyed-out cells aren’t significant after the adjustment.
         </p>
         <p style={{ color: "#6B7280" }}>
-          This is a short-term (1–8 day) relationship based on about a year of data. It isn’t a
-          forecast, and it isn’t a basis for long-term decisions on its own.
+          This is a short-term relationship (up to {plural(maxLag, "trading day")})
+          {newsFrom && newsTo ? (
+            <>
+              {" "}based on news from <span className="font-mono">{formatDate(newsFrom)}</span> to{" "}
+              <span className="font-mono">{formatDate(newsTo)}</span>
+            </>
+          ) : null}
+          . It isn’t a forecast, and it isn’t a basis for long-term decisions on its own.
         </p>
       </div>
     </details>
   );
 }
 
-export function LagHeatmap({ correlations }: Props) {
+export function LagHeatmap({ correlations, bestLag, daily }: Props) {
   if (!correlations.length) {
     return (
       <div className="flex items-center justify-center text-xs" style={{ color: "#6B7280", height: 120 }}>
@@ -101,10 +120,8 @@ export function LagHeatmap({ correlations }: Props) {
     );
   }
 
-  const significant = correlations.filter(isSignificant);
-  const best = significant.length
-    ? significant.reduce((a, b) => (Math.abs(a.correlation) >= Math.abs(b.correlation) ? a : b))
-    : null;
+  const best = bestLag == null ? null : (correlations.find((c) => c.lag === bestLag) ?? null);
+  const maxLag = Math.max(...correlations.map((c) => c.lag));
 
   return (
     <div className="flex flex-col gap-3">
@@ -123,7 +140,7 @@ export function LagHeatmap({ correlations }: Props) {
       {/* Cells: lag in trading days; not-significant cells are greyed out */}
       <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(correlations.length, 4)}, 1fr)` }}>
         {correlations.map((c) => {
-          const sig = isSignificant(c);
+          const sig = c.significant;
           return (
             <div
               key={c.lag}
@@ -173,11 +190,16 @@ export function LagHeatmap({ correlations }: Props) {
             )
           </>
         ) : (
-          <>No significant lag: adjusted p ≥ 0.05 at every lag tested</>
+          <>No significant lag at any of the {plural(correlations.length, "lag")} tested</>
         )}
       </div>
 
-      <HowToRead />
+      <HowToRead
+        lagsTested={correlations.length}
+        maxLag={maxLag}
+        newsFrom={daily[0]?.date ?? null}
+        newsTo={daily[daily.length - 1]?.date ?? null}
+      />
     </div>
   );
 }
