@@ -79,6 +79,8 @@ export interface LagCorrelation {
   n: number;
   /** Two-sided p-value, Bonferroni-adjusted for the number of lags tested */
   p_value: number;
+  /** Adjusted p-value is below the backend's significance level */
+  significant: boolean;
 }
 
 export interface NewsResponse {

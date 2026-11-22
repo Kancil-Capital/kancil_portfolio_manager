@@ -67,6 +67,7 @@ def test_lag_is_in_trading_days_with_n_and_adjusted_p():
     assert best.p_value < 0.001
     # every other lag is noise once adjusted for the 8 tests
     assert all(c.p_value > 0.05 for c in correlations if c.lag != TRUE_LAG)
+    assert [c.lag for c in correlations if c.significant] == [TRUE_LAG]
     # n counts trading days that have both news `lag` days earlier and a return
     assert all(10 <= c.n < len(DAYS) for c in correlations)
     assert len(scatter) == by_lag[1].n

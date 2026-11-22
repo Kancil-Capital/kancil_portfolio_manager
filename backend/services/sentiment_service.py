@@ -84,15 +84,16 @@ def _compute_lag_correlations(
         if result is not None:
             tested[lag] = result
 
-    correlations = [
-        LagCorrelation(
+    correlations = []
+    for lag, (corr, p, n) in tested.items():
+        p_adj = round(bonferroni(p, len(tested)), 6)
+        correlations.append(LagCorrelation(
             lag=lag,
             correlation=round(corr, 4),
             n=n,
-            p_value=round(bonferroni(p, len(tested)), 6),
-        )
-        for lag, (corr, p, n) in tested.items()
-    ]
+            p_value=p_adj,
+            significant=p_adj < SIGNIFICANCE_LEVEL,
+        ))
 
     scatter_points: list[ScatterPoint] = []
     if 1 in tested:
@@ -206,7 +207,7 @@ def get_sentiment_data(
 
     best_lag = None
     best_lag_corr = None
-    significant = [c for c in lag_correlations if c.p_value < SIGNIFICANCE_LEVEL]
+    significant = [c for c in lag_correlations if c.significant]
     if significant:
         best = max(significant, key=lambda x: abs(x.correlation))
         best_lag = best.lag

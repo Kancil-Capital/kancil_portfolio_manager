@@ -50,6 +50,9 @@ class LagCorrelation(BaseModel):
     p_value: float = Field(
         description="Two-sided p-value, Bonferroni-adjusted for the number of lags tested"
     )
+    significant: bool = Field(
+        description="Adjusted p-value is below the backend's significance level"
+    )
 
 
 class SentimentStats(BaseModel):
@@ -61,7 +64,7 @@ class SentimentStats(BaseModel):
     neutral_count: int
     negative_count: int
     sentiment_ratio: float   # positive / total
-    # Strongest lag among those with adjusted p < 0.05; null when none is significant
+    # Strongest lag among the significant ones; null when none is significant
     best_lag: int | None
     best_lag_correlation: float | None
 
