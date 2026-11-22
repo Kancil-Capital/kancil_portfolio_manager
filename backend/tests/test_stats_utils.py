@@ -6,15 +6,23 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from services.stats_utils import align_to_trading_days, bonferroni, corr_with_significance
+from services.stats_utils import (
+    MIN_PAIRS,
+    align_to_trading_days,
+    bonferroni,
+    corr_with_significance,
+    exchange_dates,
+)
 
 # Two weeks of trading days around a Monday holiday: 2026-01-19 (MLK day) is missing.
 # Mon 12 .. Fri 16, Tue 20 .. Fri 23 January 2026.
 DAYS = pd.bdate_range("2026-01-12", "2026-01-23").drop(pd.Timestamp("2026-01-19"))
 
 
-def articles(*rows):
-    return pd.DataFrame(rows, columns=["timestamp", "sentiment"])
+def articles(*rows, tz="UTC"):
+    """(timestamp, sentiment) rows, dated in tz the way the service dates them."""
+    df = pd.DataFrame(rows, columns=["timestamp", "sentiment"])
+    return df.assign(date=exchange_dates(df["timestamp"], tz))
 
 
 def day(s):
@@ -40,13 +48,15 @@ def test_articles_map_to_next_trading_day(timestamp, expected_day):
     ("Asia/Tokyo", "2026-01-14"),
 ])
 def test_date_is_taken_in_the_exchange_timezone(tz, expected_day):
-    out = align_to_trading_days(articles(("2026-01-14T01:00:00+00:00", 0.5)), DAYS, tz=tz)
+    out = align_to_trading_days(articles(("2026-01-14T01:00:00+00:00", 0.5), tz=tz), DAYS)
     assert out.dropna().index.tolist() == [day(expected_day)]
 
 
 def test_timezone_can_move_an_article_across_a_weekend():
     # 23:30 UTC Friday is already Saturday in Tokyo, so it belongs to the next session
-    out = align_to_trading_days(articles(("2026-01-16T23:30:00+00:00", 0.5)), DAYS, tz="Asia/Tokyo")
+    out = align_to_trading_days(
+        articles(("2026-01-16T23:30:00+00:00", 0.5), tz="Asia/Tokyo"), DAYS
+    )
     assert out.dropna().index.tolist() == [day("2026-01-20")]
 
 
@@ -73,9 +83,8 @@ def test_articles_outside_the_price_range_are_dropped():
 
 def test_naive_timestamps_are_read_as_utc_and_tz_aware_index_is_accepted():
     out = align_to_trading_days(
-        articles((pd.Timestamp("2026-01-14 01:00:00"), 0.5)),
+        articles((pd.Timestamp("2026-01-14 01:00:00"), 0.5), tz="America/New_York"),
         DAYS.tz_localize("America/New_York"),
-        tz="America/New_York",
     )
     assert out.index.tz is None
     assert out.dropna().index.tolist() == [day("2026-01-13")]
@@ -92,7 +101,7 @@ def test_correlation_uses_only_complete_pairs():
     idx = pd.RangeIndex(6)
     x = pd.Series([1.0, 2.0, np.nan, 4.0, 5.0, 6.0], index=idx)
     y = pd.Series([2.0, 4.0, 6.0, np.nan, 10.0, 12.0], index=idx)
-    r, p, n = corr_with_significance(x, y)
+    r, p, n = corr_with_significance(x, y, min_pairs=3)
     assert n == 4
     assert r == pytest.approx(1.0)
     assert p < 0.01
@@ -101,7 +110,7 @@ def test_correlation_uses_only_complete_pairs():
 def test_correlation_matches_a_known_value():
     x = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
     y = pd.Series([2.0, 1.0, 4.0, 3.0, 5.0])
-    r, p, n = corr_with_significance(x, y)
+    r, p, n = corr_with_significance(x, y, min_pairs=3)
     assert (round(r, 4), round(p, 4), n) == (0.8, 0.1041, 5)
 
 
@@ -125,7 +134,15 @@ def test_shifted_series_recovers_the_lag():
     ([], []),
 ])
 def test_undefined_correlation_returns_none(x, y):
-    assert corr_with_significance(pd.Series(x, dtype=float), pd.Series(y, dtype=float)) is None
+    x, y = pd.Series(x, dtype=float), pd.Series(y, dtype=float)
+    assert corr_with_significance(x, y, min_pairs=3) is None
+
+
+def test_fewer_than_min_pairs_returns_none():
+    # the one minimum for every caller: one pair short of it gives no correlation
+    x = pd.Series(np.arange(MIN_PAIRS, dtype=float))
+    assert corr_with_significance(x, 2 * x)[2] == MIN_PAIRS
+    assert corr_with_significance(x.iloc[:-1], 2 * x.iloc[:-1]) is None
 
 
 # ── bonferroni ─────────────────────────────────────────────────────────────────

@@ -8,19 +8,28 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+MIN_PAIRS = 10  # correlations over fewer (x, y) pairs than this are not reported
+
+
+def exchange_dates(timestamps: pd.Series, tz: str = "UTC") -> pd.Series:
+    """Calendar date of each timestamp in `tz` (the exchange's timezone), as naive
+    midnight. Naive timestamps are read as UTC. Work this out once per article and
+    use it everywhere an article needs a date, so every view agrees on the day."""
+    ts = pd.to_datetime(timestamps, utc=True)
+    return ts.dt.tz_convert(tz).dt.tz_localize(None).dt.normalize()
+
 
 def align_to_trading_days(
     articles_df: pd.DataFrame,
     price_index: pd.DatetimeIndex,
-    tz: str = "UTC",
 ) -> pd.Series:
     """Daily mean sentiment on the trading-day calendar.
 
-    articles_df needs `timestamp` (tz-aware; naive values are read as UTC) and
-    `sentiment`. Each article is dated in `tz` (the exchange's timezone), then
-    assigned to that day if it is a trading day, otherwise to the next trading
-    day (weekends, holidays). price_index is the calendar: one entry per
-    trading day, so no holiday table is needed.
+    articles_df needs `date` (the article's exchange-local date, from
+    exchange_dates) and `sentiment`. Each article is assigned to that day if it
+    is a trading day, otherwise to the next trading day (weekends, holidays).
+    price_index is the calendar: one entry per trading day, so no holiday table
+    is needed.
 
     The result is indexed by price_index. Days without news are NaN, not 0:
     "no news" is missing data, not neutral sentiment. Articles dated outside
@@ -37,8 +46,7 @@ def align_to_trading_days(
     if articles_df.empty or len(days) == 0:
         return empty
 
-    ts = pd.to_datetime(articles_df["timestamp"], utc=True)
-    local_date = ts.dt.tz_convert(tz).dt.tz_localize(None).dt.normalize()
+    local_date = pd.to_datetime(articles_df["date"]).dt.normalize()
 
     # First trading day on or after the article's local date
     pos = days.searchsorted(local_date.to_numpy(), side="left")
@@ -52,15 +60,23 @@ def align_to_trading_days(
     return daily.reindex(days).rename("sentiment")
 
 
-def corr_with_significance(x: pd.Series, y: pd.Series) -> tuple[float, float, int] | None:
+def paired(x: pd.Series, y: pd.Series) -> pd.DataFrame:
+    """x and y side by side, over the index entries where both are present."""
+    return pd.concat([x, y], axis=1, join="inner").dropna()
+
+
+def corr_with_significance(
+    x: pd.Series, y: pd.Series, min_pairs: int = MIN_PAIRS
+) -> tuple[float, float, int] | None:
     """Pearson correlation of x and y over the index entries where both are present.
 
-    Returns (r, p, n) with the two-sided p-value, or None when the correlation
-    is undefined: fewer than 3 pairs, or either side is constant.
+    Returns (r, p, n) with the two-sided p-value, or None when it is not
+    reported: fewer than min_pairs pairs (keep it at 3 or more), or either side
+    is constant, so the correlation is undefined.
     """
-    pair = pd.concat([x, y], axis=1, join="inner").dropna()
+    pair = paired(x, y)
     n = len(pair)
-    if n < 3:
+    if n < min_pairs:
         return None
     a = pair.iloc[:, 0].to_numpy(dtype=float)
     b = pair.iloc[:, 1].to_numpy(dtype=float)

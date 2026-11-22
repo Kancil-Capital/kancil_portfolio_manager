@@ -11,6 +11,7 @@ import pytest
 
 import services.market_service as market_service
 import services.sentiment_service as sentiment_service
+from services.stats_utils import corr_with_significance, exchange_dates
 
 DAYS = pd.bdate_range("2026-01-05", periods=120)  # the fake exchange has no holidays
 TRUE_LAG = 2
@@ -36,6 +37,14 @@ def make_prices(rng, articles=None):
                          "volume": 1_000})
 
 
+def lag_correlations(articles, prices, tz="UTC", **kwargs):
+    """Run the lag analysis the way get_sentiment_data does: date articles in tz first."""
+    dated = articles.assign(date=exchange_dates(articles["timestamp"], tz))
+    return sentiment_service._compute_lag_correlations(
+        dated[["date", "sentiment"]], prices, **kwargs
+    )
+
+
 @pytest.fixture
 def fake_market(monkeypatch):
     def install(prices, tz="UTC"):
@@ -44,12 +53,11 @@ def fake_market(monkeypatch):
     return install
 
 
-def test_lag_is_in_trading_days_with_n_and_adjusted_p(fake_market):
+def test_lag_is_in_trading_days_with_n_and_adjusted_p():
     rng = np.random.default_rng(1)
     articles = make_articles(rng)
-    fake_market(make_prices(rng, articles))
 
-    correlations, scatter = sentiment_service._compute_lag_correlations(articles, "TEST")
+    correlations, scatter = lag_correlations(articles, make_prices(rng, articles))
 
     assert [c.lag for c in correlations] == list(range(1, 9))
     by_lag = {c.lag: c for c in correlations}
@@ -64,19 +72,40 @@ def test_lag_is_in_trading_days_with_n_and_adjusted_p(fake_market):
     assert len(scatter) == by_lag[1].n
 
 
-def test_p_value_is_bonferroni_adjusted_by_max_lag(fake_market):
+def test_p_value_is_bonferroni_adjusted_by_lags_tested():
     rng = np.random.default_rng(2)
     articles = make_articles(rng)
-    fake_market(make_prices(rng))  # pure noise, so p-values are well above 0
+    prices = make_prices(rng)  # pure noise, so p-values are well above 0
 
-    eight, _ = sentiment_service._compute_lag_correlations(articles, "TEST", max_lag=8)
-    four, _ = sentiment_service._compute_lag_correlations(articles, "TEST", max_lag=4)
+    eight, _ = lag_correlations(articles, prices, max_lag=8)
+    four, _ = lag_correlations(articles, prices, max_lag=4)
+    assert (len(eight), len(four)) == (8, 4)  # every lag has enough pairs here
     for a, b in zip(four, eight):
         assert a.correlation == b.correlation
         assert b.p_value == pytest.approx(min(a.p_value * 2, 1.0), abs=1e-5)
 
 
-def test_exchange_timezone_decides_the_trading_day(fake_market):
+def test_skipped_lag_does_not_count_towards_bonferroni():
+    # News only on the last 17 trading days, so lag k has 17 - k pairs: lags 1-7 have
+    # 10 or more and are tested, lag 8 has 9 and is skipped. The factor is 7, not 8.
+    rng = np.random.default_rng(7)
+    calendar = pd.DatetimeIndex(DAYS[-17:], tz="UTC") + pd.Timedelta(hours=12)
+    articles = pd.DataFrame({"timestamp": calendar, "sentiment": rng.uniform(-1, 1, 17)})
+    prices = make_prices(rng, articles)  # signal at TRUE_LAG, so not every p is capped at 1
+
+    correlations, _ = lag_correlations(articles, prices)
+
+    assert [c.lag for c in correlations] == list(range(1, 8))
+    assert [c.n for c in correlations] == [17 - lag for lag in range(1, 8)]
+    returns = prices["close"].pct_change()
+    sent = pd.Series(articles["sentiment"].to_numpy(), index=DAYS[-17:]).reindex(DAYS)
+    for c in correlations:
+        _, raw_p, _ = corr_with_significance(sent.shift(c.lag), returns)
+        assert c.p_value == pytest.approx(min(raw_p * 7, 1.0), abs=1e-6)
+    assert min(c.p_value for c in correlations) < 1.0
+
+
+def test_exchange_timezone_decides_the_trading_day():
     # All news lands at 23:30 UTC, which is already the next morning in Tokyo. Returns are
     # built from the UTC dates, so dating articles in Tokyo time moves the signal one lag
     # earlier: from TRUE_LAG to TRUE_LAG - 1.
@@ -86,19 +115,30 @@ def test_exchange_timezone_decides_the_trading_day(fake_market):
     articles["timestamp"] += pd.Timedelta(hours=11, minutes=30)
 
     def best_lag(tz):
-        fake_market(prices, tz=tz)
-        correlations, _ = sentiment_service._compute_lag_correlations(articles, "TEST")
+        correlations, _ = lag_correlations(articles, prices, tz=tz)
         return max(correlations, key=lambda c: abs(c.correlation)).lag
 
     assert best_lag("UTC") == TRUE_LAG
     assert best_lag("Asia/Tokyo") == TRUE_LAG - 1
 
 
-def test_too_few_pairs_gives_no_correlations(fake_market):
+def test_too_few_pairs_gives_no_correlations():
     rng = np.random.default_rng(4)
-    fake_market(make_prices(rng))
+    prices = make_prices(rng)
     articles = make_articles(rng).head(5)
-    assert sentiment_service._compute_lag_correlations(articles, "TEST") == ([], [])
+    assert lag_correlations(articles, prices) == ([], [])
+
+
+def test_constant_sentiment_gives_no_lag_1_and_no_scatter():
+    # Plenty of pairs, but every day's sentiment is equal, so r is undefined: the
+    # heatmap has no lag-1 cell and the scatter must not show points either.
+    rng = np.random.default_rng(8)
+    articles = make_articles(rng).assign(sentiment=0.5)
+
+    correlations, scatter = lag_correlations(articles, make_prices(rng))
+
+    assert 1 not in [c.lag for c in correlations]
+    assert scatter == []
 
 
 # ── best lag in get_sentiment_data ─────────────────────────────────────────────
@@ -124,6 +164,31 @@ def test_best_lag_is_the_strongest_significant_lag(fake_market, fake_db):
 
     assert data.stats.best_lag == TRUE_LAG
     assert data.stats.best_lag_correlation == data.lag_correlations[TRUE_LAG - 1].correlation
+
+
+def test_article_has_the_same_date_in_daily_records_and_correlation(
+    fake_market, fake_db, monkeypatch
+):
+    # 01:00 UTC Wednesday 14 Jan is 20:00 Tuesday 13 Jan in New York: both the daily
+    # chart and the lag correlation must put it on Tuesday, not the UTC Wednesday.
+    rng = np.random.default_rng(9)
+    fake_market(make_prices(rng), tz="America/New_York")
+    fake_db(pd.DataFrame({
+        "timestamp": [pd.Timestamp("2026-01-14T01:00:00", tz="UTC")], "sentiment": [0.5],
+    }))
+    aligned = []
+    real_align = sentiment_service.align_to_trading_days
+
+    def spy_align(*args):
+        aligned.append(real_align(*args))
+        return aligned[-1]
+
+    monkeypatch.setattr(sentiment_service, "align_to_trading_days", spy_align)
+
+    data = sentiment_service.get_sentiment_data("TEST")
+
+    assert [d.date for d in data.daily] == ["2026-01-13"]
+    assert aligned[0].dropna().index.tolist() == [pd.Timestamp("2026-01-13")]
 
 
 def test_best_lag_is_none_when_no_lag_is_significant(fake_market, fake_db):

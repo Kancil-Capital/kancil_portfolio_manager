@@ -21,11 +21,16 @@ from db.models import (
     SentimentData,
     SentimentStats,
 )
-from services.stats_utils import align_to_trading_days, bonferroni, corr_with_significance
+from services.stats_utils import (
+    align_to_trading_days,
+    bonferroni,
+    corr_with_significance,
+    exchange_dates,
+    paired,
+)
 
 log = logging.getLogger(__name__)
 
-MIN_LAG_PAIRS = 10          # lags with fewer (sentiment, return) pairs are not reported
 SIGNIFICANCE_LEVEL = 0.05   # on the Bonferroni-adjusted p-value
 
 STOPWORDS = {
@@ -56,52 +61,47 @@ def _extract_keywords(titles: list[str], top_n: int = 30) -> list[KeywordCount]:
 
 def _compute_lag_correlations(
     articles: pd.DataFrame,
-    ticker: str,
+    price_df: pd.DataFrame | None,
     max_lag: int = 8,
 ) -> tuple[list[LagCorrelation], list[ScatterPoint]]:
     """Correlate daily sentiment[t] with price return[t+lag], lag in trading days.
-    articles has one row per article (timestamp, sentiment); they are dated in the
-    exchange's timezone and put on the price calendar. p-values are
-    Bonferroni-adjusted for the max_lag lags tested.
-    Returns (correlations, scatter_points) where scatter_points are 1d lag pairs."""
-    try:
-        price_df = market_service.get_raw_price_df(ticker, period="1y")
-        if price_df is None or len(price_df) < 20:
-            return [], []
-
-        price_returns = price_df["close"].pct_change().rename("ret")
-        price_returns.index = price_returns.index.normalize()
-
-        tz = market_service.get_exchange_timezone(ticker)
-        sent = align_to_trading_days(articles, price_returns.index, tz=tz)
-
-        correlations = []
-        scatter_points: list[ScatterPoint] = []
-        for lag in range(1, max_lag + 1):
-            shifted = sent.shift(lag)
-            merged = pd.concat([shifted, price_returns], axis=1).dropna()
-            if len(merged) < MIN_LAG_PAIRS:
-                continue
-            result = corr_with_significance(merged.iloc[:, 0], merged.iloc[:, 1])
-            if result is not None:
-                corr, p, n = result
-                correlations.append(LagCorrelation(
-                    lag=lag,
-                    correlation=round(corr, 4),
-                    n=n,
-                    p_value=round(bonferroni(p, max_lag), 6),
-                ))
-            if lag == 1:
-                for _, row in merged.iterrows():
-                    scatter_points.append(ScatterPoint(
-                        sentiment=round(float(row.iloc[0]), 4),
-                        next_day_return=round(float(row.iloc[1]) * 100, 4),
-                    ))
-
-        return correlations, scatter_points
-    except Exception as e:
-        log.error(f"Lag correlation failed for {ticker}: {e}")
+    articles has one row per article: `date` (exchange-local, from exchange_dates)
+    and `sentiment`; they are put on price_df's trading calendar. A lag counts as
+    tested when it has a correlation (enough pairs, neither side constant), and
+    p-values are Bonferroni-adjusted for the number of lags tested.
+    Returns (correlations, scatter_points); scatter_points are the lag-1 pairs,
+    sent only when lag 1 was tested."""
+    if price_df is None or len(price_df) < 20:
         return [], []
+
+    returns = price_df["close"].pct_change().rename("ret")
+    returns.index = returns.index.normalize()
+    sent = align_to_trading_days(articles, returns.index)
+
+    tested: dict[int, tuple[float, float, int]] = {}
+    for lag in range(1, max_lag + 1):
+        result = corr_with_significance(sent.shift(lag), returns)
+        if result is not None:
+            tested[lag] = result
+
+    correlations = [
+        LagCorrelation(
+            lag=lag,
+            correlation=round(corr, 4),
+            n=n,
+            p_value=round(bonferroni(p, len(tested)), 6),
+        )
+        for lag, (corr, p, n) in tested.items()
+    ]
+
+    scatter_points: list[ScatterPoint] = []
+    if 1 in tested:
+        pair = paired(sent.shift(1), returns).to_numpy(dtype=float)
+        scatter_points = [
+            ScatterPoint(sentiment=s, next_day_return=r)
+            for s, r in zip(pair[:, 0].round(4).tolist(), (pair[:, 1] * 100).round(4).tolist())
+        ]
+    return correlations, scatter_points
 
 
 # ── Main service function ──────────────────────────────────────────────────────
@@ -146,8 +146,6 @@ def get_sentiment_data(
     else:
         return None
 
-    df["date"] = df["timestamp"].dt.tz_convert(None).dt.normalize()
-
     # Filter to ticker-specific sentiment
     ticker_df = df[df["affected"] == ticker].copy()
     if ticker_df.empty:
@@ -158,6 +156,12 @@ def get_sentiment_data(
         ticker_df = ticker_df[ticker_df["confidence"] >= min_confidence]
         if ticker_df.empty:
             return None
+
+    # Each article is dated once, in the exchange's timezone, for both the daily
+    # records and the lag correlation.
+    price_df = market_service.get_raw_price_df(ticker, period="1y")
+    tz = market_service.get_exchange_timezone(ticker)
+    ticker_df = ticker_df.assign(date=exchange_dates(ticker_df["timestamp"], tz))
 
     # ── Daily aggregation ──────────────────────────────────────────────────────
     daily_records: list[SentimentDaily] = []
@@ -177,9 +181,13 @@ def get_sentiment_data(
     daily_records.sort(key=lambda x: x.date)
 
     # ── Lag correlations ───────────────────────────────────────────────────────
-    lag_correlations, scatter_points = _compute_lag_correlations(
-        ticker_df[["timestamp", "sentiment"]], ticker
-    )
+    try:
+        lag_correlations, scatter_points = _compute_lag_correlations(
+            ticker_df[["date", "sentiment"]], price_df
+        )
+    except Exception as e:
+        log.error(f"Lag correlation failed for {ticker}: {e}")
+        lag_correlations, scatter_points = [], []
 
     # ── Stats ──────────────────────────────────────────────────────────────────
     cutoff_30d = end_date - timedelta(days=30)
