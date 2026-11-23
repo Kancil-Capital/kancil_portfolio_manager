@@ -1,10 +1,19 @@
 "use client";
 
-import type { LagCorrelation } from "@/lib/types";
+import { Info } from "lucide-react";
+import { formatDate } from "@/lib/formatters";
+import type { LagCorrelation, SentimentDay } from "@/lib/types";
 
 interface Props {
   correlations: LagCorrelation[];
+  // stats.best_lag from the API: the backend decides significance and the best lag
+  bestLag: number | null;
+  // daily sentiment records (sorted by date); their range is the news behind the correlations
+  daily: SentimentDay[];
 }
+
+// Below this many paired days the analyst guidance says to treat r as weak
+const WEAK_N = 30;
 
 function corrToColor(c: number): string {
   // -1 → red, 0 → dark gray, +1 → green
@@ -26,7 +35,83 @@ function corrToColor(c: number): string {
   }
 }
 
-export function LagHeatmap({ correlations }: Props) {
+function formatR(r: number, digits = 2): string {
+  return `${r >= 0 ? "+" : ""}${r.toFixed(digits)}`;
+}
+
+// "p<0.001" or "p=0.031"; spaced reads "p < 0.001" / "p = 0.031"
+function formatP(p: number, spaced = false): string {
+  const [op, value] = p < 0.001 ? ["<", "0.001"] : ["=", p.toFixed(3)];
+  return spaced ? `p ${op} ${value}` : `p${op}${value}`;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function cellTooltip(c: LagCorrelation): string {
+  const lines = [
+    `Sentiment ${c.lag} trading day${c.lag === 1 ? "" : "s"} ago vs return today`,
+    `r = ${formatR(c.correlation, 3)}`,
+    `n = ${c.n}${c.n < WEAK_N ? " (under 30: treat as weak)" : ""}`,
+    `${formatP(c.p_value, true)} (adjusted): ${c.significant ? "significant" : "not significant"}`,
+  ];
+  return lines.join("\n");
+}
+
+interface HowToReadProps {
+  lagsTested: number;
+  maxLag: number;
+  newsFrom: string | null;
+  newsTo: string | null;
+}
+
+function HowToRead({ lagsTested, maxLag, newsFrom, newsTo }: HowToReadProps) {
+  return (
+    <details className="group text-xs" style={{ color: "#9CA3AF" }}>
+      <summary
+        className="flex cursor-pointer list-none items-center gap-1.5 select-none"
+        style={{ color: "#6B7280" }}
+      >
+        <Info size={12} />
+        <span className="group-open:hidden">How to read this</span>
+        <span className="hidden group-open:inline">Hide</span>
+      </summary>
+      <div className="mt-2 flex flex-col gap-2 rounded px-3 py-2 leading-relaxed" style={{ background: "#111827" }}>
+        <p>
+          Each cell compares a stock’s news sentiment k trading days ago with its price return
+          today.
+        </p>
+        <p>
+          <span className="font-mono" style={{ color: "#F9FAFB" }}>r</span> (−1 to 1): strength and
+          direction. Positive means good news tended to come before price rises.
+        </p>
+        <p>
+          <span className="font-mono" style={{ color: "#F9FAFB" }}>n</span>: the number of trading
+          days with both news and a price. Under about 30, treat the result as weak.
+        </p>
+        <p>
+          <span className="font-mono" style={{ color: "#F9FAFB" }}>p</span> (adjusted): how likely a
+          result this strong is by pure chance, adjusted because {plural(lagsTested, "lag")}{" "}
+          {lagsTested === 1 ? "was" : "were"} tested. Lags with too few days of data aren’t shown or
+          counted. Greyed-out cells aren’t significant after the adjustment.
+        </p>
+        <p style={{ color: "#6B7280" }}>
+          This is a short-term relationship (up to {plural(maxLag, "trading day")})
+          {newsFrom && newsTo ? (
+            <>
+              {" "}based on news from <span className="font-mono">{formatDate(newsFrom)}</span> to{" "}
+              <span className="font-mono">{formatDate(newsTo)}</span>
+            </>
+          ) : null}
+          . It isn’t a forecast, and it isn’t a basis for long-term decisions on its own.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+export function LagHeatmap({ correlations, bestLag, daily }: Props) {
   if (!correlations.length) {
     return (
       <div className="flex items-center justify-center text-xs" style={{ color: "#6B7280", height: 120 }}>
@@ -35,71 +120,86 @@ export function LagHeatmap({ correlations }: Props) {
     );
   }
 
+  const best = bestLag == null ? null : (correlations.find((c) => c.lag === bestLag) ?? null);
+  const maxLag = Math.max(...correlations.map((c) => c.lag));
+
   return (
     <div className="flex flex-col gap-3">
       {/* Colour scale legend */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px]" style={{ color: "#EF4444" }}>−1</span>
+        <span className="font-mono text-[10px]" style={{ color: "#EF4444" }}>−1</span>
         <div
           className="h-2 flex-1 rounded-full"
           style={{
             background: "linear-gradient(to right, #EF4444, #374151, #10B981)",
           }}
         />
-        <span className="text-[10px]" style={{ color: "#10B981" }}>+1</span>
+        <span className="font-mono text-[10px]" style={{ color: "#10B981" }}>+1</span>
       </div>
 
-      {/* Cells */}
+      {/* Cells: lag in trading days; not-significant cells are greyed out */}
       <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(correlations.length, 4)}, 1fr)` }}>
-        {correlations.map(({ lag, correlation }) => (
-          <div
-            key={lag}
-            className="flex flex-col items-center justify-center rounded p-2"
-            style={{
-              background: corrToColor(correlation),
-              minHeight: 56,
-            }}
-          >
-            <span className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.6)" }}>
-              {lag}d lag
-            </span>
-            <span
-              className="font-mono text-sm font-medium"
-              style={{ color: "#fff" }}
+        {correlations.map((c) => {
+          const sig = c.significant;
+          return (
+            <div
+              key={c.lag}
+              title={cellTooltip(c)}
+              className="flex cursor-help flex-col items-center justify-center gap-0.5 rounded p-2"
+              style={{
+                background: sig ? corrToColor(c.correlation) : "#374151",
+                opacity: sig ? 1 : 0.5,
+                minHeight: 72,
+              }}
             >
-              {correlation >= 0 ? "+" : ""}
-              {correlation.toFixed(2)}
-            </span>
-          </div>
-        ))}
+              <span className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.6)" }}>
+                {c.lag}d lag
+              </span>
+              <span className="font-mono text-sm font-medium" style={{ color: "#fff" }}>
+                {formatR(c.correlation)}
+              </span>
+              <span className="font-mono text-[10px]" style={{ color: "rgba(255,255,255,0.7)" }}>
+                n=
+                <span style={c.n < WEAK_N ? { color: "#F59E0B" } : undefined}>{c.n}</span>
+                {" "}{formatP(c.p_value)}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Best lag callout */}
-      {correlations.length > 0 && (() => {
-        const best = correlations.reduce((a, b) =>
-          Math.abs(a.correlation) >= Math.abs(b.correlation) ? a : b
-        );
-        return (
-          <div
-            className="rounded px-3 py-2 text-xs"
-            style={{ background: "#111827", color: "#9CA3AF" }}
-          >
-            Strongest signal at{" "}
+      {/* Best lag callout: significant lags only */}
+      <div
+        className="rounded px-3 py-2 text-xs"
+        style={{ background: "#111827", color: "#9CA3AF" }}
+      >
+        {best ? (
+          <>
+            Strongest significant signal at{" "}
             <span className="font-mono font-medium" style={{ color: "#F9FAFB" }}>
               {best.lag}d lag
             </span>{" "}
             (r ={" "}
-            <span
-              className="font-mono font-medium"
-              style={{ color: corrToColor(best.correlation) }}
-            >
-              {best.correlation >= 0 ? "+" : ""}
-              {best.correlation.toFixed(3)}
+            <span className="font-mono font-medium" style={{ color: corrToColor(best.correlation) }}>
+              {formatR(best.correlation, 3)}
+            </span>
+            ,{" "}
+            <span className="font-mono font-medium" style={{ color: "#F9FAFB" }}>
+              {formatP(best.p_value, true)}
             </span>
             )
-          </div>
-        );
-      })()}
+          </>
+        ) : (
+          <>No significant lag at any of the {plural(correlations.length, "lag")} tested</>
+        )}
+      </div>
+
+      <HowToRead
+        lagsTested={correlations.length}
+        maxLag={maxLag}
+        newsFrom={daily[0]?.date ?? null}
+        newsTo={daily[daily.length - 1]?.date ?? null}
+      />
     </div>
   );
 }

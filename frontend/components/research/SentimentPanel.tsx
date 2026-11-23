@@ -147,9 +147,14 @@ export function SentimentPanel({ sentiment, minConfidence, onMinConfidenceChange
       )}
 
       {/* Best lag note */}
-      {stats.best_lag > 0 && (
+      {stats.best_lag == null && sentiment.lag_correlations.length > 0 && (
         <div className="mt-3 text-xs" style={{ color: "#6B7280" }}>
-          Best predictive lag:{" "}
+          Best significant lag: none (no lag is significant after adjustment)
+        </div>
+      )}
+      {stats.best_lag != null && stats.best_lag_correlation != null && (
+        <div className="mt-3 text-xs" style={{ color: "#6B7280" }}>
+          Best significant lag:{" "}
           <span className="font-mono font-medium" style={{ color: "#9CA3AF" }}>
             {stats.best_lag}d
           </span>

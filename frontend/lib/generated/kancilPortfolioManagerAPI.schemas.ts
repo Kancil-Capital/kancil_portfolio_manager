@@ -71,8 +71,16 @@ export interface KeywordCount {
 }
 
 export interface LagCorrelation {
+  /** Trading days from the sentiment to the return it is paired with */
   lag: number;
+  /** Pearson r of daily mean sentiment[t] and return[t+lag] */
   correlation: number;
+  /** Number of (sentiment, return) pairs behind the correlation */
+  n: number;
+  /** Two-sided p-value, Bonferroni-adjusted for the number of lags tested */
+  p_value: number;
+  /** Adjusted p-value is below the backend's significance level */
+  significant: boolean;
 }
 
 export interface NewsResponse {
@@ -155,8 +163,8 @@ export interface SentimentStats {
   neutral_count: number;
   negative_count: number;
   sentiment_ratio: number;
-  best_lag: number;
-  best_lag_correlation: number;
+  best_lag: number | null;
+  best_lag_correlation: number | null;
 }
 
 export interface SentimentData {

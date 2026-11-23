@@ -3,7 +3,7 @@ db/models.py
 All Pydantic response models for the Kancil Portfolio Manager API.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ── Price ──────────────────────────────────────────────────────────────────────
 
@@ -44,8 +44,15 @@ class SentimentDaily(BaseModel):
 
 
 class LagCorrelation(BaseModel):
-    lag: int
-    correlation: float
+    lag: int = Field(description="Trading days from the sentiment to the return it is paired with")
+    correlation: float = Field(description="Pearson r of daily mean sentiment[t] and return[t+lag]")
+    n: int = Field(description="Number of (sentiment, return) pairs behind the correlation")
+    p_value: float = Field(
+        description="Two-sided p-value, Bonferroni-adjusted for the number of lags tested"
+    )
+    significant: bool = Field(
+        description="Adjusted p-value is below the backend's significance level"
+    )
 
 
 class SentimentStats(BaseModel):
@@ -57,8 +64,9 @@ class SentimentStats(BaseModel):
     neutral_count: int
     negative_count: int
     sentiment_ratio: float   # positive / total
-    best_lag: int
-    best_lag_correlation: float
+    # Strongest lag among the significant ones; null when none is significant
+    best_lag: int | None
+    best_lag_correlation: float | None
 
 
 class KeywordCount(BaseModel):

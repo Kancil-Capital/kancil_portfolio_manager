@@ -232,7 +232,11 @@ function ResearchContent({ ticker }: { ticker: string }) {
                     Lag Correlation
                   </span>
                 </div>
-                <LagHeatmap correlations={sentiment.lag_correlations} />
+                <LagHeatmap
+                  correlations={sentiment.lag_correlations}
+                  bestLag={sentiment.stats.best_lag}
+                  daily={sentiment.daily}
+                />
               </div>
 
               {/* Lag scatter */}
